@@ -8,6 +8,7 @@ public record UserResponse(
         Long id,
         String email,
         String fullName,
+        String avatarUrl,
         Role role,
         UserStatus status
 ) {
@@ -17,6 +18,7 @@ public record UserResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getFullName(),
+                user.getAvatarUrl(),
                 user.getRole(),
                 user.getStatus()
         );
