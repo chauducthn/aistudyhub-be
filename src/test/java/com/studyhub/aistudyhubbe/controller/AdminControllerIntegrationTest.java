@@ -1,6 +1,7 @@
 package com.studyhub.aistudyhubbe.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,11 +18,15 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Transactional
 class AdminControllerIntegrationTest {
 
     @Autowired
@@ -46,6 +51,39 @@ class AdminControllerIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ADMIN_OK"));
+    }
+
+    @Test
+    void adminCanListUsersAndLockOrUnlockAccount() throws Exception {
+        String email = "managed" + System.currentTimeMillis() + "@test.com";
+        registerAndGetToken(email);
+        User managedUser = userRepository.findByEmailIgnoreCase(email).orElseThrow();
+        String adminToken = createAdminAndGetToken("admin-lock" + System.currentTimeMillis() + "@test.com");
+
+        mockMvc.perform(get("/api/admin/users")
+                        .param("search", email)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].email").value(email));
+
+        mockMvc.perform(patch("/api/admin/users/" + managedUser.getId() + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"LOCKED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("LOCKED"));
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"%s\",\"password\":\"secret123\"}".formatted(email)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/admin/users/" + managedUser.getId() + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"ACTIVE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
     }
 
     private String registerAndGetToken(String email) throws Exception {

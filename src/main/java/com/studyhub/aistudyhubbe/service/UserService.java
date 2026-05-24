@@ -16,10 +16,15 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AvatarStorageService avatarStorageService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            AvatarStorageService avatarStorageService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.avatarStorageService = avatarStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -31,7 +36,22 @@ public class UserService {
     public UserResponse updateProfile(Long userId, UpdateProfileRequest request) {
         User user = findUser(userId);
         user.setFullName(request.fullName().trim());
-        user.setAvatarUrl(normalizeNullable(request.avatarUrl()));
+        return UserResponse.from(userRepository.save(user));
+    }
+
+    @Transactional
+    public UserResponse updateAvatar(Long userId, org.springframework.web.multipart.MultipartFile avatar) {
+        User user = findUser(userId);
+        String avatarUrl = avatarStorageService.storeAvatar(user.getId(), avatar, user.getAvatarUrl());
+        user.setAvatarUrl(avatarUrl);
+        return UserResponse.from(userRepository.save(user));
+    }
+
+    @Transactional
+    public UserResponse deleteAvatar(Long userId) {
+        User user = findUser(userId);
+        avatarStorageService.deleteAvatar(user.getAvatarUrl());
+        user.setAvatarUrl(null);
         return UserResponse.from(userRepository.save(user));
     }
 
@@ -55,10 +75,4 @@ public class UserService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
     }
 
-    private String normalizeNullable(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
-    }
 }
