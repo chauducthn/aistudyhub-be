@@ -87,17 +87,15 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
-        ensureAccountNotLocked(user);
-
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            handleFailedLogin(user);
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
+        if (passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            resetFailedAttempts(user);
+            refreshTokenRepository.revokeAllByUserId(user.getId());
+            return buildAuthResponse(user);
         }
 
-        resetFailedAttempts(user);
-        refreshTokenRepository.revokeAllByUserId(user.getId());
-
-        return buildAuthResponse(user);
+        ensureAccountNotLocked(user);
+        handleFailedLogin(user);
+        throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
     }
 
     @Transactional
