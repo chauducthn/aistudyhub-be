@@ -2,8 +2,11 @@ package com.studyhub.aistudyhubbe.controller;
 
 import com.studyhub.aistudyhubbe.dto.ApiResponse;
 import com.studyhub.aistudyhubbe.dto.AuthResponse;
+import com.studyhub.aistudyhubbe.dto.ForgotPasswordRequest;
+import com.studyhub.aistudyhubbe.dto.ForgotPasswordResponse;
 import com.studyhub.aistudyhubbe.dto.LoginRequest;
 import com.studyhub.aistudyhubbe.dto.RegisterRequest;
+import com.studyhub.aistudyhubbe.dto.ResetPasswordRequest;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.AuthService;
@@ -62,6 +65,22 @@ public class AuthController {
         authService.logout(refreshToken);
         clearRefreshCookie(response);
         return ResponseEntity.ok(ApiResponse.ok("Logout successful", null));
+    }
+
+    @Operation(summary = "FR-01.15 — Yeu cau dat lai mat khau (gui token/link)")
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        ForgotPasswordResponse response = authService.requestPasswordReset(request.email());
+        return ResponseEntity.ok(ApiResponse.ok(response.message(), response));
+    }
+
+    @Operation(summary = "FR-01.15 — Dat lai mat khau bang reset token")
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok(ApiResponse.ok("Password reset successful", null));
     }
 
     @Operation(summary = "Lam moi access token tu HttpOnly refresh cookie")
