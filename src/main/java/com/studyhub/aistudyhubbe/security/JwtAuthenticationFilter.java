@@ -25,6 +25,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return path.startsWith("/api/auth/")
+                || path.equals("/api/health")
+                || path.startsWith("/swagger-ui")
+                || path.startsWith("/v3/api-docs");
+    }
+
+    @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -39,11 +48,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Long userId = Long.parseLong(jwtService.extractUserId(token));
                 UserPrincipal principal = (UserPrincipal) userDetailsService.loadUserById(userId);
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                principal, null, principal.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (principal.isAccountNonLocked() && principal.isEnabled()) {
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    principal, null, principal.getAuthorities());
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
             }
         }
 
