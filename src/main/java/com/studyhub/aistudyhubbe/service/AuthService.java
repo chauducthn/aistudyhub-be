@@ -119,9 +119,9 @@ public class AuthService {
     }
 
     @Transactional
-    public String createRefreshToken(User user) {
+    public String createRefreshToken(Long userId) {
         RefreshToken refreshToken = new RefreshToken();
-        refreshToken.setUser(user);
+        refreshToken.setUser(userRepository.getReferenceById(userId));
         refreshToken.setToken(UUID.randomUUID().toString());
         refreshToken.setExpiresAt(Instant.now().plusSeconds(
                 (long) jwtProperties.getRefreshExpirationDays() * 24 * 60 * 60));
@@ -140,12 +140,11 @@ public class AuthService {
     }
 
     private void ensureAccountNotLocked(User user) {
-        if (user.getStatus() == UserStatus.LOCKED && user.getLockedUntil() != null) {
-            if (Instant.now().isBefore(user.getLockedUntil())) {
-                throw new ApiException(
-                        HttpStatus.FORBIDDEN,
-                        "Account is locked. Try again later.");
+        if (user.getStatus() == UserStatus.LOCKED) {
+            if (user.getLockedUntil() == null || Instant.now().isBefore(user.getLockedUntil())) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Account is locked.");
             }
+
             user.setStatus(UserStatus.ACTIVE);
             user.setLockedUntil(null);
             user.setFailedLoginAttempts(0);

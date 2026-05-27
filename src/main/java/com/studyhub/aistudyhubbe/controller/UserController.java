@@ -11,12 +11,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/users")
@@ -46,6 +50,22 @@ public class UserController {
             @Valid @RequestBody UpdateProfileRequest request) {
         Long userId = requireUserId(principal);
         return ApiResponse.ok("Profile updated", userService.updateProfile(userId, request));
+    }
+
+    @Operation(summary = "Upload current user avatar")
+    @PatchMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<UserResponse> updateAvatar(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam("avatar") MultipartFile avatar) {
+        Long userId = requireUserId(principal);
+        return ApiResponse.ok("Avatar updated", userService.updateAvatar(userId, avatar));
+    }
+
+    @Operation(summary = "Delete current user avatar")
+    @DeleteMapping("/me/avatar")
+    public ApiResponse<UserResponse> deleteAvatar(@AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
+        return ApiResponse.ok("Avatar deleted", userService.deleteAvatar(userId));
     }
 
     @Operation(summary = "Change current user password")

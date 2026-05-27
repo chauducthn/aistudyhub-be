@@ -4,8 +4,6 @@ import com.studyhub.aistudyhubbe.dto.ApiResponse;
 import com.studyhub.aistudyhubbe.dto.AuthResponse;
 import com.studyhub.aistudyhubbe.dto.LoginRequest;
 import com.studyhub.aistudyhubbe.dto.RegisterRequest;
-import com.studyhub.aistudyhubbe.entity.User;
-import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.AuthService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -26,11 +24,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class AuthController {
 
     private final AuthService authService;
-    private final UserRepository userRepository;
 
-    public AuthController(AuthService authService, UserRepository userRepository) {
+    public AuthController(AuthService authService) {
         this.authService = authService;
-        this.userRepository = userRepository;
     }
 
     @Operation(summary = "Đăng ký tài khoản mới")
@@ -75,8 +71,7 @@ public class AuthController {
     }
 
     private void attachRefreshCookie(HttpServletResponse response, Long userId) {
-        User user = userRepository.findById(userId).orElseThrow();
-        String refreshToken = authService.createRefreshToken(user);
+        String refreshToken = authService.createRefreshToken(userId);
         response.addHeader("Set-Cookie", buildRefreshCookie(refreshToken, false).toString());
     }
 

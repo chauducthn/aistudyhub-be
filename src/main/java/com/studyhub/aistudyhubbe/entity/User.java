@@ -7,11 +7,18 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "users")
+@Table(
+        name = "users",
+        indexes = {
+                @Index(name = "idx_users_created_at", columnList = "created_at"),
+                @Index(name = "idx_users_status", columnList = "status"),
+                @Index(name = "idx_users_full_name", columnList = "full_name")
+        })
 public class User {
 
     @Id

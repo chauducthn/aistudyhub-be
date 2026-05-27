@@ -1,5 +1,6 @@
 package com.studyhub.aistudyhubbe.controller;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,11 +12,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Transactional
 class UserControllerIntegrationTest {
 
     @Autowired
@@ -40,7 +46,7 @@ class UserControllerIntegrationTest {
                 registerResult.getResponse().getContentAsString(), "$.data.accessToken");
 
         String updateJson = """
-                {"fullName":"Updated User","avatarUrl":"https://example.com/avatar.png"}
+                {"fullName":"Updated User"}
                 """;
 
         mockMvc.perform(patch("/api/users/me")
@@ -48,8 +54,23 @@ class UserControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(updateJson))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.fullName").value("Updated User"))
-                .andExpect(jsonPath("$.data.avatarUrl").value("https://example.com/avatar.png"));
+                .andExpect(jsonPath("$.data.fullName").value("Updated User"));
+
+        MockMultipartFile avatar = new MockMultipartFile(
+                "avatar",
+                "avatar.png",
+                MediaType.IMAGE_PNG_VALUE,
+                "avatar-image".getBytes());
+
+        mockMvc.perform(multipart("/api/users/me/avatar")
+                        .file(avatar)
+                        .with(request -> {
+                            request.setMethod("PATCH");
+                            return request;
+                        })
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatarUrl").value(org.hamcrest.Matchers.startsWith("/uploads/avatars/")));
 
         String passwordJson = """
                 {"currentPassword":"%s","newPassword":"newsecret123"}
