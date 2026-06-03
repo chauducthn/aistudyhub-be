@@ -181,6 +181,35 @@ class DocumentControllerIntegrationTest {
     }
 
     @Test
+    void documentFilesAreOnlyAccessibleThroughDownloadEndpoint() throws Exception {
+        String token = registerAndGetToken("document-static-denied" + System.currentTimeMillis() + "@test.com");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "secure-notes.txt",
+                "text/plain",
+                "secure content".getBytes());
+
+        MvcResult uploadResult = mockMvc.perform(multipart("/api/documents")
+                        .file(file)
+                        .param("title", "Secure Notes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Integer documentId = JsonPath.read(uploadResult.getResponse().getContentAsString(), "$.data.id");
+        String fileUrl = JsonPath.read(uploadResult.getResponse().getContentAsString(), "$.data.fileUrl");
+
+        mockMvc.perform(get("/api/documents/" + documentId + "/download")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(content().string("secure content"));
+
+        mockMvc.perform(get(fileUrl)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void authenticatedUserCanFindAnotherUsersPublicDocuments() throws Exception {
         String ownerToken = registerAndGetToken("public-owner" + System.currentTimeMillis() + "@test.com");
         String viewerToken = registerAndGetToken("public-viewer" + System.currentTimeMillis() + "@test.com");

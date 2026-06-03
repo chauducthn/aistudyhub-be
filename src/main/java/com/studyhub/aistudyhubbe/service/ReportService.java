@@ -78,6 +78,13 @@ public class ReportService {
         return PageResponse.from(reports);
     }
 
+    @Transactional(readOnly = true)
+    public ReportResponse getReport(Long reportId) {
+        Report report = reportRepository.findWithDocumentAndReporterById(reportId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Report not found"));
+        return ReportResponse.from(report);
+    }
+
     @Transactional
     public ReportResponse resolveReport(Long reportId, ResolveReportRequest request) {
         Report report = reportRepository.findWithDocumentAndReporterById(reportId)
