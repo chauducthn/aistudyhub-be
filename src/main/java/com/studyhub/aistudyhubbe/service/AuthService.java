@@ -87,13 +87,14 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
+        ensureAccountNotLocked(user);
+
         if (passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             resetFailedAttempts(user);
             refreshTokenRepository.revokeAllByUserId(user.getId());
             return buildAuthResponse(user);
         }
 
-        ensureAccountNotLocked(user);
         handleFailedLogin(user);
         throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
     }
@@ -209,17 +210,24 @@ public class AuthService {
     }
 
     private void ensureAccountNotLocked(User user) {
-        if (user.getStatus() == UserStatus.LOCKED && user.getLockedUntil() != null) {
-            if (Instant.now().isBefore(user.getLockedUntil())) {
-                throw new ApiException(
-                        HttpStatus.FORBIDDEN,
-                        "Account is locked. Try again later.");
-            }
-            user.setStatus(UserStatus.ACTIVE);
-            user.setLockedUntil(null);
-            user.setFailedLoginAttempts(0);
-            userRepository.save(user);
+        if (user.getStatus() != UserStatus.LOCKED) {
+            return;
         }
+
+        if (user.getLockedUntil() == null) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Account is locked.");
+        }
+
+        if (Instant.now().isBefore(user.getLockedUntil())) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "Account is locked. Try again later.");
+        }
+
+        user.setStatus(UserStatus.ACTIVE);
+        user.setLockedUntil(null);
+        user.setFailedLoginAttempts(0);
+        userRepository.save(user);
     }
 
     private void handleFailedLogin(User user) {

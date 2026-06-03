@@ -4,9 +4,13 @@ import com.studyhub.aistudyhubbe.dto.AdminDashboardMetricsResponse;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.ApiResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
+import com.studyhub.aistudyhubbe.dto.ReportResponse;
+import com.studyhub.aistudyhubbe.dto.ResolveReportRequest;
 import com.studyhub.aistudyhubbe.dto.UpdateUserStatusRequest;
+import com.studyhub.aistudyhubbe.entity.ReportStatus;
 import com.studyhub.aistudyhubbe.security.UserPrincipal;
 import com.studyhub.aistudyhubbe.service.AdminService;
+import com.studyhub.aistudyhubbe.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -24,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
 
     private final AdminService adminService;
+    private final ReportService reportService;
 
-    public AdminController(AdminService adminService) {
+    public AdminController(AdminService adminService, ReportService reportService) {
         this.adminService = adminService;
+        this.reportService = reportService;
     }
 
     @GetMapping("/summary")
@@ -58,5 +64,24 @@ public class AdminController {
     @GetMapping("/dashboard/metrics")
     public ApiResponse<AdminDashboardMetricsResponse> dashboardMetrics() {
         return ApiResponse.ok(adminService.getDashboardMetrics());
+    }
+
+    @Operation(summary = "List document reports for admin review")
+    @GetMapping("/reports")
+    public ApiResponse<PageResponse<ReportResponse>> listReports(
+            @RequestParam(required = false) ReportStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.ok(reportService.listReports(status, page, size));
+    }
+
+    @Operation(summary = "Resolve or reject a document report")
+    @PatchMapping("/reports/{reportId}/resolve")
+    public ApiResponse<ReportResponse> resolveReport(
+            @PathVariable Long reportId,
+            @Valid @RequestBody ResolveReportRequest request) {
+        return ApiResponse.ok(
+                "Report reviewed",
+                reportService.resolveReport(reportId, request));
     }
 }

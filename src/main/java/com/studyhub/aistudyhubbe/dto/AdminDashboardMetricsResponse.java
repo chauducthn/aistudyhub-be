@@ -9,9 +9,38 @@ public record AdminDashboardMetricsResponse(
         long lockedUsers,
         long newUsersLast7Days,
         long chatbotApiCalls,
+        DocumentMetrics documents,
+        SubjectMetrics subjects,
+        ReportMetrics reports,
         StorageMetrics storage,
         List<DailyUserMetric> userGrowth
 ) {
+
+    public record DocumentMetrics(
+            long totalDocuments,
+            long publicDocuments,
+            long privateDocuments,
+            long hiddenDocuments,
+            long lockedDocuments,
+            long removedDocuments,
+            long deletedDocuments,
+            long moderatedDocuments
+    ) {
+    }
+
+    public record SubjectMetrics(
+            long totalSubjects
+    ) {
+    }
+
+    public record ReportMetrics(
+            long totalReports,
+            long pendingReports,
+            long reviewedReports,
+            long rejectedReports,
+            long resolvedReports
+    ) {
+    }
 
     public record StorageMetrics(
             long usedBytes,

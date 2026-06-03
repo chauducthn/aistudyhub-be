@@ -1,6 +1,7 @@
 package com.studyhub.aistudyhubbe.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,6 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -86,6 +88,47 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
     }
 
+    @Test
+    void adminDashboardMetricsIncludeRealDocumentSubjectAndReportData() throws Exception {
+        String ownerToken = registerAndGetToken("metrics-owner" + System.currentTimeMillis() + "@test.com");
+        String reporterToken = registerAndGetToken("metrics-reporter" + System.currentTimeMillis() + "@test.com");
+        String adminToken = createAdminAndGetToken("metrics-admin" + System.currentTimeMillis() + "@test.com");
+
+        Integer subjectId = createSubject(ownerToken, "Metrics Subject");
+        Integer privateDocumentId = uploadTextDocument(ownerToken, "Private Metrics Doc", "private metrics");
+        Integer publicDocumentId = uploadTextDocument(ownerToken, "Public Metrics Doc", "public metrics");
+
+        mockMvc.perform(patch("/api/documents/" + publicDocumentId + "/visibility")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"PUBLIC\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/documents/" + privateDocumentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectId\":" + subjectId + "}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/" + publicDocumentId + "/reports")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + reporterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"OTHER\",\"description\":\"Metrics report\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/admin/dashboard/metrics")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.documents.totalDocuments").value(2))
+                .andExpect(jsonPath("$.data.documents.publicDocuments").value(1))
+                .andExpect(jsonPath("$.data.documents.privateDocuments").value(1))
+                .andExpect(jsonPath("$.data.documents.moderatedDocuments").value(0))
+                .andExpect(jsonPath("$.data.subjects.totalSubjects").value(1))
+                .andExpect(jsonPath("$.data.reports.totalReports").value(1))
+                .andExpect(jsonPath("$.data.reports.pendingReports").value(1))
+                .andExpect(jsonPath("$.data.chatbotApiCalls").value(0));
+    }
+
     private String registerAndGetToken(String email) throws Exception {
         String registerJson = """
                 {"email":"%s","password":"secret123","fullName":"Regular User"}
@@ -98,6 +141,34 @@ class AdminControllerIntegrationTest {
                 .andReturn();
 
         return JsonPath.read(result.getResponse().getContentAsString(), "$.data.accessToken");
+    }
+
+    private Integer createSubject(String token, String name) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/subjects")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + name + "\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+    }
+
+    private Integer uploadTextDocument(String token, String title, String content) throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "admin-metrics.txt",
+                "text/plain",
+                content.getBytes());
+
+        MvcResult result = mockMvc.perform(multipart("/api/documents")
+                        .file(file)
+                        .param("title", title)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
     }
 
     private String createAdminAndGetToken(String email) throws Exception {

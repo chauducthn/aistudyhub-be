@@ -3,10 +3,15 @@ package com.studyhub.aistudyhubbe.service;
 import com.studyhub.aistudyhubbe.dto.AdminDashboardMetricsResponse;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
+import com.studyhub.aistudyhubbe.entity.DocumentStatus;
+import com.studyhub.aistudyhubbe.entity.ReportStatus;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.entity.UserStatus;
 import com.studyhub.aistudyhubbe.exception.ApiException;
+import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.RefreshTokenRepository;
+import com.studyhub.aistudyhubbe.repository.ReportRepository;
+import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -29,14 +34,23 @@ public class AdminService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final StorageUsageService storageUsageService;
+    private final DocumentRepository documentRepository;
+    private final SubjectRepository subjectRepository;
+    private final ReportRepository reportRepository;
 
     public AdminService(
             UserRepository userRepository,
             RefreshTokenRepository refreshTokenRepository,
-            StorageUsageService storageUsageService) {
+            StorageUsageService storageUsageService,
+            DocumentRepository documentRepository,
+            SubjectRepository subjectRepository,
+            ReportRepository reportRepository) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.storageUsageService = storageUsageService;
+        this.documentRepository = documentRepository;
+        this.subjectRepository = subjectRepository;
+        this.reportRepository = reportRepository;
     }
 
     @Transactional(readOnly = true)
@@ -87,6 +101,8 @@ public class AdminService {
         long usedBytes = storageUsageService.calculateUsedBytes();
         double usedGb = round2(usedBytes / BYTES_PER_GB);
         double percentUsed = round2((usedGb / StorageUsageService.STORAGE_LIMIT_GB) * 100D);
+        AdminDashboardMetricsResponse.DocumentMetrics documentMetrics = buildDocumentMetrics();
+        AdminDashboardMetricsResponse.ReportMetrics reportMetrics = buildReportMetrics();
 
         return new AdminDashboardMetricsResponse(
                 userRepository.count(),
@@ -94,6 +110,9 @@ public class AdminService {
                 userRepository.countByStatus(UserStatus.LOCKED),
                 userRepository.countByCreatedAtAfter(sevenDaysAgo),
                 0L,
+                documentMetrics,
+                new AdminDashboardMetricsResponse.SubjectMetrics(subjectRepository.count()),
+                reportMetrics,
                 new AdminDashboardMetricsResponse.StorageMetrics(
                         usedBytes,
                         usedGb,
@@ -102,6 +121,33 @@ public class AdminService {
                         usedGb > StorageUsageService.STORAGE_LIMIT_GB
                 ),
                 buildUserGrowth()
+        );
+    }
+
+    private AdminDashboardMetricsResponse.DocumentMetrics buildDocumentMetrics() {
+        long hiddenDocuments = documentRepository.countByStatus(DocumentStatus.HIDDEN);
+        long lockedDocuments = documentRepository.countByStatus(DocumentStatus.LOCKED);
+        long removedDocuments = documentRepository.countByStatus(DocumentStatus.REMOVED);
+
+        return new AdminDashboardMetricsResponse.DocumentMetrics(
+                documentRepository.count(),
+                documentRepository.countByStatus(DocumentStatus.PUBLIC),
+                documentRepository.countByStatus(DocumentStatus.PRIVATE),
+                hiddenDocuments,
+                lockedDocuments,
+                removedDocuments,
+                documentRepository.countByStatus(DocumentStatus.DELETED),
+                hiddenDocuments + lockedDocuments + removedDocuments
+        );
+    }
+
+    private AdminDashboardMetricsResponse.ReportMetrics buildReportMetrics() {
+        return new AdminDashboardMetricsResponse.ReportMetrics(
+                reportRepository.count(),
+                reportRepository.countByStatus(ReportStatus.PENDING),
+                reportRepository.countByStatus(ReportStatus.REVIEWED),
+                reportRepository.countByStatus(ReportStatus.REJECTED),
+                reportRepository.countByStatus(ReportStatus.RESOLVED)
         );
     }
 
