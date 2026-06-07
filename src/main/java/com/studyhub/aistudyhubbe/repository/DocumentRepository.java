@@ -31,6 +31,14 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     @Query("""
             select d from Document d
+            join fetch d.user
+            left join fetch d.subject
+            where d.id = :documentId
+            """)
+    Optional<Document> findAdminDetailById(@Param("documentId") Long documentId);
+
+    @Query("""
+            select d from Document d
             left join fetch d.subject
             where d.id = :documentId
               and d.status = :status
@@ -124,6 +132,45 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     Page<Document> searchPublicDocuments(
             @Param("keyword") String keyword,
             @Param("status") DocumentStatus status,
+            Pageable pageable);
+
+    @Query(
+            value = """
+                    select d from Document d
+                    join d.user u
+                    left join d.subject s
+                    where (:status is null or d.status = :status)
+                      and (:userId is null or u.id = :userId)
+                      and (
+                          :keyword is null
+                          or lower(d.title) like lower(concat('%', :keyword, '%'))
+                          or lower(d.originalFilename) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(d.description, '')) like lower(concat('%', :keyword, '%'))
+                          or lower(u.email) like lower(concat('%', :keyword, '%'))
+                          or lower(u.fullName) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(s.name, '')) like lower(concat('%', :keyword, '%'))
+                      )
+                    """,
+            countQuery = """
+                    select count(d) from Document d
+                    join d.user u
+                    left join d.subject s
+                    where (:status is null or d.status = :status)
+                      and (:userId is null or u.id = :userId)
+                      and (
+                          :keyword is null
+                          or lower(d.title) like lower(concat('%', :keyword, '%'))
+                          or lower(d.originalFilename) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(d.description, '')) like lower(concat('%', :keyword, '%'))
+                          or lower(u.email) like lower(concat('%', :keyword, '%'))
+                          or lower(u.fullName) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(s.name, '')) like lower(concat('%', :keyword, '%'))
+                      )
+                    """)
+    Page<Document> searchAdminDocuments(
+            @Param("keyword") String keyword,
+            @Param("status") DocumentStatus status,
+            @Param("userId") Long userId,
             Pageable pageable);
 
     long countByStatus(DocumentStatus status);

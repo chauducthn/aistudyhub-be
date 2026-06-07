@@ -129,6 +129,79 @@ class AdminControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.chatbotApiCalls").value(0));
     }
 
+    @Test
+    void adminCanListDetailAndModerateDocuments() throws Exception {
+        String ownerEmail = "moderation-owner" + System.currentTimeMillis() + "@test.com";
+        String ownerToken = registerAndGetToken(ownerEmail);
+        String viewerToken = registerAndGetToken("moderation-viewer" + System.currentTimeMillis() + "@test.com");
+        String adminToken = createAdminAndGetToken("moderation-admin" + System.currentTimeMillis() + "@test.com");
+        Integer documentId = uploadTextDocument(ownerToken, "Admin Moderation Notes", "moderation content");
+
+        mockMvc.perform(patch("/api/documents/" + documentId + "/visibility")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"PUBLIC\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/documents/" + documentId + "/download")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + viewerToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/admin/documents")
+                        .param("keyword", "Moderation")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].id").value(documentId))
+                .andExpect(jsonPath("$.data.content[0].userEmail").value(ownerEmail));
+
+        mockMvc.perform(get("/api/admin/documents/" + documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(documentId))
+                .andExpect(jsonPath("$.data.status").value("PUBLIC"));
+
+        mockMvc.perform(patch("/api/admin/documents/" + documentId + "/status")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"HIDDEN\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("HIDDEN"));
+
+        mockMvc.perform(get("/api/documents/" + documentId + "/download")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + viewerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adminCanViewReportDetail() throws Exception {
+        String ownerToken = registerAndGetToken("report-detail-owner" + System.currentTimeMillis() + "@test.com");
+        String reporterToken = registerAndGetToken("report-detail-user" + System.currentTimeMillis() + "@test.com");
+        String adminToken = createAdminAndGetToken("report-detail-admin" + System.currentTimeMillis() + "@test.com");
+        Integer documentId = uploadTextDocument(ownerToken, "Reported Detail Notes", "reported content");
+
+        mockMvc.perform(patch("/api/documents/" + documentId + "/visibility")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"PUBLIC\"}"))
+                .andExpect(status().isOk());
+
+        MvcResult reportResult = mockMvc.perform(post("/api/documents/" + documentId + "/reports")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + reporterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"OTHER\",\"description\":\"Needs admin review\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Integer reportId = JsonPath.read(reportResult.getResponse().getContentAsString(), "$.data.id");
+
+        mockMvc.perform(get("/api/admin/reports/" + reportId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(reportId))
+                .andExpect(jsonPath("$.data.documentId").value(documentId))
+                .andExpect(jsonPath("$.data.reason").value("OTHER"));
+    }
+
     private String registerAndGetToken(String email) throws Exception {
         String registerJson = """
                 {"email":"%s","password":"secret123","fullName":"Regular User"}

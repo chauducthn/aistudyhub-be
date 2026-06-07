@@ -1,8 +1,10 @@
 package com.studyhub.aistudyhubbe.service;
 
 import com.studyhub.aistudyhubbe.dto.AdminDashboardMetricsResponse;
+import com.studyhub.aistudyhubbe.dto.AdminDocumentResponse;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
+import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
 import com.studyhub.aistudyhubbe.entity.User;
@@ -11,6 +13,7 @@ import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.RefreshTokenRepository;
 import com.studyhub.aistudyhubbe.repository.ReportRepository;
+import com.studyhub.aistudyhubbe.repository.ChatMessageRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import java.time.Instant;
@@ -37,6 +40,7 @@ public class AdminService {
     private final DocumentRepository documentRepository;
     private final SubjectRepository subjectRepository;
     private final ReportRepository reportRepository;
+    private final ChatMessageRepository chatMessageRepository;
 
     public AdminService(
             UserRepository userRepository,
@@ -44,13 +48,15 @@ public class AdminService {
             StorageUsageService storageUsageService,
             DocumentRepository documentRepository,
             SubjectRepository subjectRepository,
-            ReportRepository reportRepository) {
+            ReportRepository reportRepository,
+            ChatMessageRepository chatMessageRepository) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.storageUsageService = storageUsageService;
         this.documentRepository = documentRepository;
         this.subjectRepository = subjectRepository;
         this.reportRepository = reportRepository;
+        this.chatMessageRepository = chatMessageRepository;
     }
 
     @Transactional(readOnly = true)
@@ -72,6 +78,48 @@ public class AdminService {
         }
 
         return PageResponse.from(users.map(AdminUserResponse::from));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<AdminDocumentResponse> listDocuments(
+            String keyword,
+            DocumentStatus status,
+            Long userId,
+            int page,
+            int size) {
+        Pageable pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(size, 1), 100),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<AdminDocumentResponse> documents = documentRepository.searchAdminDocuments(
+                        normalizeKeyword(keyword),
+                        status,
+                        userId,
+                        pageable)
+                .map(AdminDocumentResponse::from);
+        return PageResponse.from(documents);
+    }
+
+    @Transactional(readOnly = true)
+    public AdminDocumentResponse getDocument(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        return AdminDocumentResponse.from(document);
+    }
+
+    @Transactional
+    public AdminDocumentResponse updateDocumentStatus(Long documentId, DocumentStatus status) {
+        if (!isAdminDocumentStatus(status)) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "Admin document status must be PUBLIC, PRIVATE, HIDDEN, LOCKED, or REMOVED");
+        }
+
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        document.setStatus(status);
+        return AdminDocumentResponse.from(documentRepository.save(document));
     }
 
     @Transactional
@@ -109,7 +157,7 @@ public class AdminService {
                 userRepository.countByStatus(UserStatus.ACTIVE),
                 userRepository.countByStatus(UserStatus.LOCKED),
                 userRepository.countByCreatedAtAfter(sevenDaysAgo),
-                0L,
+                chatMessageRepository.count(),
                 documentMetrics,
                 new AdminDashboardMetricsResponse.SubjectMetrics(subjectRepository.count()),
                 reportMetrics,
@@ -173,5 +221,20 @@ public class AdminService {
 
     private double round2(double value) {
         return Math.round(value * 100D) / 100D;
+    }
+
+    private boolean isAdminDocumentStatus(DocumentStatus status) {
+        return status == DocumentStatus.PUBLIC
+                || status == DocumentStatus.PRIVATE
+                || status == DocumentStatus.HIDDEN
+                || status == DocumentStatus.LOCKED
+                || status == DocumentStatus.REMOVED;
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (keyword == null || keyword.trim().isBlank()) {
+            return null;
+        }
+        return keyword.trim();
     }
 }
