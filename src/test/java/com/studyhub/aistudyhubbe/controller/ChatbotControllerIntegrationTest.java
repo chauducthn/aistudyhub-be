@@ -63,7 +63,8 @@ class ChatbotControllerIntegrationTest {
                                 """.formatted(documentId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.documentId").value(documentId))
-                .andExpect(jsonPath("$.data.documentTitle").value("Chat Notes"));
+                .andExpect(jsonPath("$.data.documentTitle").value("Chat Notes"))
+                .andExpect(jsonPath("$.data.response").value(org.hamcrest.Matchers.containsString("chat content")));
 
         mockMvc.perform(post("/api/chatbot/messages")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + viewerToken)

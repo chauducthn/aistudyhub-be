@@ -1,6 +1,7 @@
 package com.studyhub.aistudyhubbe.dto;
 
 import com.studyhub.aistudyhubbe.entity.Document;
+import com.studyhub.aistudyhubbe.entity.DocumentExtractionStatus;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import java.time.Instant;
 
@@ -16,6 +17,9 @@ public record DocumentResponse(
         String fileUrl,
         String originalFilename,
         DocumentStatus status,
+        DocumentExtractionStatus extractionStatus,
+        String extractionError,
+        Instant extractedAt,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -33,6 +37,9 @@ public record DocumentResponse(
                 document.getFileUrl(),
                 document.getOriginalFilename(),
                 document.getStatus(),
+                document.getExtractionStatus(),
+                document.getExtractionError(),
+                document.getExtractedAt(),
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );
