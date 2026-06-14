@@ -14,6 +14,7 @@ import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
+import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,16 +41,19 @@ public class DocumentService {
     private final UserRepository userRepository;
     private final SubjectRepository subjectRepository;
     private final DocumentStorageService documentStorageService;
+    private final DocumentTextExtractionService documentTextExtractionService;
 
     public DocumentService(
             DocumentRepository documentRepository,
             UserRepository userRepository,
             SubjectRepository subjectRepository,
-            DocumentStorageService documentStorageService) {
+            DocumentStorageService documentStorageService,
+            DocumentTextExtractionService documentTextExtractionService) {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
         this.documentStorageService = documentStorageService;
+        this.documentTextExtractionService = documentTextExtractionService;
     }
 
     @Transactional
@@ -73,6 +77,7 @@ public class DocumentService {
         document.setFileUrl(storedFile.fileUrl());
         document.setOriginalFilename(storedFile.originalFilename());
         document.setStatus(DocumentStatus.PRIVATE);
+        applyExtractionResult(document, storedFile);
 
         return DocumentResponse.from(documentRepository.save(document));
     }
@@ -246,6 +251,15 @@ public class DocumentService {
             return null;
         }
         return keyword.trim();
+    }
+
+    private void applyExtractionResult(Document document, StoredDocumentFile storedFile) {
+        Path documentPath = documentStorageService.resolveDocumentPath(storedFile.fileUrl());
+        ExtractionResult extraction = documentTextExtractionService.extract(documentPath, storedFile.fileType());
+        document.setExtractionStatus(extraction.status());
+        document.setExtractedText(extraction.text());
+        document.setExtractionError(extraction.error());
+        document.setExtractedAt(extraction.extractedAt());
     }
 
     private String resolveContentType(Path documentPath, String fileType) {

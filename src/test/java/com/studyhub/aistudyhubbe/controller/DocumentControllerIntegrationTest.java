@@ -96,6 +96,33 @@ class DocumentControllerIntegrationTest {
     }
 
     @Test
+    void textDocumentUploadExtractsReadableText() throws Exception {
+        String token = registerAndGetToken("extract-document" + System.currentTimeMillis() + "@test.com");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "extract-notes.txt",
+                "text/plain",
+                "Design patterns improve reusable software design.".getBytes());
+
+        MvcResult uploadResult = mockMvc.perform(multipart("/api/documents")
+                        .file(file)
+                        .param("title", "Extract Notes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.extractionStatus").value("EXTRACTED"))
+                .andExpect(jsonPath("$.data.extractionError").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.extractedAt").exists())
+                .andReturn();
+
+        Integer documentId = JsonPath.read(uploadResult.getResponse().getContentAsString(), "$.data.id");
+
+        mockMvc.perform(get("/api/documents/" + documentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.extractionStatus").value("EXTRACTED"));
+    }
+
+    @Test
     void invalidDocumentTypeIsRejected() throws Exception {
         String token = registerAndGetToken("invalid-document" + System.currentTimeMillis() + "@test.com");
         MockMultipartFile file = new MockMultipartFile(

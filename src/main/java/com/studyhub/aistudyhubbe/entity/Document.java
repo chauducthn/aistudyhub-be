@@ -61,6 +61,19 @@ public class Document {
     @Column(nullable = false, length = 30)
     private DocumentStatus status = DocumentStatus.PRIVATE;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "extraction_status", nullable = false, length = 30)
+    private DocumentExtractionStatus extractionStatus = DocumentExtractionStatus.PENDING;
+
+    @Column(name = "extracted_text", columnDefinition = "LONGTEXT")
+    private String extractedText;
+
+    @Column(name = "extraction_error", length = 1000)
+    private String extractionError;
+
+    @Column(name = "extracted_at")
+    private Instant extractedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -157,6 +170,38 @@ public class Document {
 
     public void setStatus(DocumentStatus status) {
         this.status = status;
+    }
+
+    public DocumentExtractionStatus getExtractionStatus() {
+        return extractionStatus;
+    }
+
+    public void setExtractionStatus(DocumentExtractionStatus extractionStatus) {
+        this.extractionStatus = extractionStatus;
+    }
+
+    public String getExtractedText() {
+        return extractedText;
+    }
+
+    public void setExtractedText(String extractedText) {
+        this.extractedText = extractedText;
+    }
+
+    public String getExtractionError() {
+        return extractionError;
+    }
+
+    public void setExtractionError(String extractionError) {
+        this.extractionError = extractionError;
+    }
+
+    public Instant getExtractedAt() {
+        return extractedAt;
+    }
+
+    public void setExtractedAt(Instant extractedAt) {
+        this.extractedAt = extractedAt;
     }
 
     public Instant getCreatedAt() {
