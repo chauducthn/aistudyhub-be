@@ -15,6 +15,7 @@ import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
 import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
+import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,18 +43,21 @@ public class DocumentService {
     private final SubjectRepository subjectRepository;
     private final DocumentStorageService documentStorageService;
     private final DocumentTextExtractionService documentTextExtractionService;
+    private final DocumentChunkIndexer documentChunkIndexer;
 
     public DocumentService(
             DocumentRepository documentRepository,
             UserRepository userRepository,
             SubjectRepository subjectRepository,
             DocumentStorageService documentStorageService,
-            DocumentTextExtractionService documentTextExtractionService) {
+            DocumentTextExtractionService documentTextExtractionService,
+            DocumentChunkIndexer documentChunkIndexer) {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
         this.documentStorageService = documentStorageService;
         this.documentTextExtractionService = documentTextExtractionService;
+        this.documentChunkIndexer = documentChunkIndexer;
     }
 
     @Transactional
@@ -79,7 +83,9 @@ public class DocumentService {
         document.setStatus(DocumentStatus.PRIVATE);
         applyExtractionResult(document, storedFile);
 
-        return DocumentResponse.from(documentRepository.save(document));
+        Document saved = documentRepository.save(document);
+        documentChunkIndexer.indexDocument(saved);
+        return DocumentResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
