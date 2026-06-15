@@ -171,7 +171,7 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
-    public DownloadedDocument downloadDocument(Long userId, Long documentId) {
+    public String getDocumentDownloadUrl(Long userId, Long documentId) {
         Document document = documentRepository.findDownloadableById(
                         documentId,
                         userId,
@@ -179,18 +179,7 @@ public class DocumentService {
                         EXCLUDED_NORMAL_STATUSES)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
 
-        Path documentPath = documentStorageService.resolveDocumentPath(document.getFileUrl());
-        try {
-            Resource resource = new UrlResource(documentPath.toUri());
-            return new DownloadedDocument(
-                    resource,
-                    document.getOriginalFilename(),
-                    resolveContentType(documentPath, document.getFileType()),
-                    Files.size(documentPath)
-            );
-        } catch (IOException ex) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not read document file");
-        }
+        return document.getFileUrl();
     }
 
     @Transactional
@@ -254,12 +243,21 @@ public class DocumentService {
     }
 
     private void applyExtractionResult(Document document, StoredDocumentFile storedFile) {
-        Path documentPath = documentStorageService.resolveDocumentPath(storedFile.fileUrl());
-        ExtractionResult extraction = documentTextExtractionService.extract(documentPath, storedFile.fileType());
-        document.setExtractionStatus(extraction.status());
-        document.setExtractedText(extraction.text());
-        document.setExtractionError(extraction.error());
-        document.setExtractedAt(extraction.extractedAt());
+        Path tempPath = null;
+        try {
+            tempPath = documentStorageService.downloadToTempFile(storedFile.fileUrl());
+            ExtractionResult extraction = documentTextExtractionService.extract(tempPath, storedFile.fileType());
+            document.setExtractionStatus(extraction.status());
+            document.setExtractedText(extraction.text());
+            document.setExtractionError(extraction.error());
+            document.setExtractedAt(extraction.extractedAt());
+        } finally {
+            if (tempPath != null) {
+                try {
+                    Files.deleteIfExists(tempPath);
+                } catch (IOException ignored) {}
+            }
+        }
     }
 
     private String resolveContentType(Path documentPath, String fileType) {
@@ -291,11 +289,4 @@ public class DocumentService {
         };
     }
 
-    public record DownloadedDocument(
-            Resource resource,
-            String filename,
-            String contentType,
-            long contentLength
-    ) {
-    }
 }

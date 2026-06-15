@@ -1,15 +1,17 @@
 package com.studyhub.aistudyhubbe.service;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -20,22 +22,8 @@ public class DocumentStorageService {
 
     public static final long MAX_DOCUMENT_SIZE_BYTES = 20L * 1024L * 1024L;
 
-    private static final String PUBLIC_PATH_PREFIX = "/uploads/documents/";
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-            "pdf",
-            "doc",
-            "docx",
-            "ppt",
-            "pptx",
-            "txt",
-            "rtf",
-            "md",
-            "xls",
-            "xlsx",
-            "csv",
-            "odt",
-            "ods",
-            "odp"
+            "pdf", "doc", "docx", "ppt", "pptx", "txt", "rtf", "md", "xls", "xlsx", "csv", "odt", "ods", "odp"
     );
     private static final Map<String, String> EXPECTED_CONTENT_TYPES = Map.ofEntries(
             Map.entry("pdf", "application/pdf"),
@@ -54,10 +42,10 @@ public class DocumentStorageService {
             Map.entry("odp", "application/vnd.oasis.opendocument.presentation")
     );
 
-    private final Path documentStoragePath;
+    private final Cloudinary cloudinary;
 
-    public DocumentStorageService(@Value("${app.storage.document-dir}") String documentStorageDir) {
-        this.documentStoragePath = Paths.get(documentStorageDir).toAbsolutePath().normalize();
+    public DocumentStorageService(Cloudinary cloudinary) {
+        this.cloudinary = cloudinary;
     }
 
     public StoredDocumentFile storeDocument(Long userId, MultipartFile file) {
@@ -65,50 +53,34 @@ public class DocumentStorageService {
 
         String originalFilename = cleanOriginalFilename(file.getOriginalFilename());
         String extension = getExtension(originalFilename);
-        String userFolder = "user-" + userId;
-        String storedFilename = UUID.randomUUID() + "." + extension;
 
         try {
-            Path userStoragePath = documentStoragePath.resolve(userFolder).normalize();
-            Files.createDirectories(userStoragePath);
+            Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
+                    "resource_type", "raw",
+                    "folder", "aistudyhub/documents/user-" + userId
+            ));
 
-            Path destination = userStoragePath.resolve(storedFilename).normalize();
-            if (!destination.startsWith(userStoragePath)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid document file name");
-            }
-
-            file.transferTo(destination);
             return new StoredDocumentFile(
-                    PUBLIC_PATH_PREFIX + userFolder + "/" + storedFilename,
+                    uploadResult.get("secure_url").toString(),
                     originalFilename,
                     extension.toUpperCase(Locale.ROOT),
                     file.getSize()
             );
         } catch (IOException ex) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store document file");
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store document file on Cloudinary");
         }
     }
 
-    public Path getDocumentStoragePath() {
-        return documentStoragePath;
-    }
-
-    public Path resolveDocumentPath(String fileUrl) {
-        if (fileUrl == null || !fileUrl.startsWith(PUBLIC_PATH_PREFIX)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Document file not found");
+    public Path downloadToTempFile(String fileUrl) {
+        try {
+            Path tempFile = Files.createTempFile("aistudyhub-doc-", ".tmp");
+            try (InputStream in = new URL(fileUrl).openStream()) {
+                Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return tempFile;
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to download document for processing");
         }
-
-        String relativePath = fileUrl.substring(PUBLIC_PATH_PREFIX.length());
-        Path documentPath = documentStoragePath.resolve(relativePath).normalize();
-        if (!documentPath.startsWith(documentStoragePath)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid document file path");
-        }
-
-        if (!Files.exists(documentPath) || !Files.isRegularFile(documentPath)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "Document file not found");
-        }
-
-        return documentPath;
     }
 
     private void validateFile(MultipartFile file) {
