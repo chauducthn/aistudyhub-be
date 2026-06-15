@@ -103,12 +103,25 @@ public class ChatbotService {
             return null;
         }
 
-        return documentRepository.findDownloadableById(
-                        documentId,
-                        userId,
-                        DocumentStatus.PUBLIC,
-                        EXCLUDED_CHAT_DOCUMENT_STATUSES)
+        Document document = documentRepository.findAdminDetailById(documentId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (EXCLUDED_CHAT_DOCUMENT_STATUSES.contains(document.getStatus())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        Long ownerId = document.getUser().getId();
+        if (ownerId.equals(userId)) {
+            return document;
+        }
+
+        if (document.getStatus() == DocumentStatus.PUBLIC) {
+            return document;
+        }
+
+        throw new ApiException(
+                HttpStatus.FORBIDDEN,
+                "You do not have permission to chat with this private document.");
     }
 
     private String normalizePrompt(String prompt) {
