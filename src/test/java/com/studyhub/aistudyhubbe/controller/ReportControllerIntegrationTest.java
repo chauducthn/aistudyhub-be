@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -135,7 +136,10 @@ class ReportControllerIntegrationTest {
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + reporterToken))
-                .andExpect(status().isOk());
+                .andExpect(status().isFound())
+                .andExpect(header().string(
+                        HttpHeaders.LOCATION,
+                        org.hamcrest.Matchers.startsWith("/uploads/documents/")));
     }
 
     private Integer uploadTextDocument(String token, String title, String content) throws Exception {

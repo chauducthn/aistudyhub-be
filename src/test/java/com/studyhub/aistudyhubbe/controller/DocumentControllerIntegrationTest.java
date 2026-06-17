@@ -186,11 +186,10 @@ class DocumentControllerIntegrationTest {
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + otherToken))
-                .andExpect(status().isOk())
+                .andExpect(status().isFound())
                 .andExpect(header().string(
-                        HttpHeaders.CONTENT_DISPOSITION,
-                        org.hamcrest.Matchers.containsString("notes.txt")))
-                .andExpect(content().string("downloadable content"));
+                        HttpHeaders.LOCATION,
+                        org.hamcrest.Matchers.startsWith("/uploads/documents/")));
 
         mockMvc.perform(delete("/api/documents/" + documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken))
@@ -228,8 +227,10 @@ class DocumentControllerIntegrationTest {
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isOk())
-                .andExpect(content().string("secure content"));
+                .andExpect(status().isFound())
+                .andExpect(header().string(
+                        HttpHeaders.LOCATION,
+                        org.hamcrest.Matchers.startsWith("/uploads/documents/")));
 
         mockMvc.perform(get(fileUrl)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))

@@ -48,8 +48,14 @@ public class Document {
     @Column(name = "file_type", nullable = false, length = 50)
     private String fileType;
 
+    @Column(name = "content_type", length = 150)
+    private String contentType;
+
     @Column(name = "file_size", nullable = false)
     private long fileSize;
+
+    @Column(name = "s3_key", length = 1024)
+    private String s3Key;
 
     @Column(name = "file_url", nullable = false, length = 1024)
     private String fileUrl;
@@ -140,12 +146,28 @@ public class Document {
         this.fileType = fileType;
     }
 
+    public String getContentType() {
+        return contentType;
+    }
+
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
+    }
+
     public long getFileSize() {
         return fileSize;
     }
 
     public void setFileSize(long fileSize) {
         this.fileSize = fileSize;
+    }
+
+    public String getS3Key() {
+        return s3Key;
+    }
+
+    public void setS3Key(String s3Key) {
+        this.s3Key = s3Key;
     }
 
     public String getFileUrl() {
