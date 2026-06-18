@@ -2,9 +2,10 @@ package com.studyhub.aistudyhubbe.service;
 
 import com.studyhub.aistudyhubbe.config.AiProperties;
 import com.studyhub.aistudyhubbe.exception.ApiException;
+import com.studyhub.aistudyhubbe.service.gemini.GeminiChatRequestBuilder;
+import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser;
+import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser.GeminiGenerateResponse;
 import java.time.Duration;
-import java.util.List;
-import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -16,18 +17,17 @@ import org.springframework.web.client.RestClientResponseException;
 @Service
 public class GeminiChatClient {
 
-    private static final String SYSTEM_INSTRUCTION = """
-            You are AI Study Hub, an academic AI assistant.
-            Answer clearly, accurately, and in the same language as the user's question unless the user asks otherwise.
-            Prefer the provided document context when it is available.
-            If the context is missing or insufficient, say what is missing and give a useful general study explanation.
-            Do not invent citations or claim that a document contains information that is not in the provided context.
-            """;
-
     private final AiProperties aiProperties;
+    private final GeminiChatRequestBuilder requestBuilder;
+    private final GeminiChatResponseParser responseParser;
 
-    public GeminiChatClient(AiProperties aiProperties) {
+    public GeminiChatClient(
+            AiProperties aiProperties,
+            GeminiChatRequestBuilder requestBuilder,
+            GeminiChatResponseParser responseParser) {
         this.aiProperties = aiProperties;
+        this.requestBuilder = requestBuilder;
+        this.responseParser = responseParser;
     }
 
     public boolean isConfigured() {
@@ -46,12 +46,12 @@ public class GeminiChatClient {
         try {
             GeminiGenerateResponse response = restClient()
                     .post()
-                    .uri("/%s:generateContent?key={apiKey}".formatted(normalizedModelPath()), aiProperties.getGemini().getApiKey())
-                    .body(buildRequest(prompt, documentTitle, documentContext))
+                    .uri("/%s:generateContent?key={apiKey}".formatted(requestBuilder.modelPath()), aiProperties.getGemini().getApiKey())
+                    .body(requestBuilder.build(prompt, documentTitle, documentContext))
                     .retrieve()
                     .body(GeminiGenerateResponse.class);
 
-            String text = extractText(response);
+            String text = responseParser.extractText(response);
             if (!StringUtils.hasText(text)) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Gemini API returned an empty response");
             }
@@ -78,68 +78,6 @@ public class GeminiChatClient {
                 .build();
     }
 
-    private Map<String, Object> buildRequest(String prompt, String documentTitle, String documentContext) {
-        String userMessage = """
-                User question:
-                %s
-
-                Selected document:
-                %s
-
-                Document context:
-                %s
-
-                Please provide a focused study answer. When helpful, include bullet points, definitions, examples, or quiz questions.
-                """.formatted(
-                prompt,
-                StringUtils.hasText(documentTitle) ? documentTitle : "No document selected",
-                StringUtils.hasText(documentContext) ? documentContext : "No document context available");
-
-        return Map.of(
-                "systemInstruction", content(SYSTEM_INSTRUCTION),
-                "contents", List.of(content(userMessage)),
-                "generationConfig", Map.of(
-                        "temperature", aiProperties.getGemini().getTemperature(),
-                        "maxOutputTokens", aiProperties.getGemini().getMaxOutputTokens()
-                )
-        );
-    }
-
-    private Map<String, Object> content(String text) {
-        return Map.of("parts", List.of(Map.of("text", text)));
-    }
-
-    private String normalizedModelPath() {
-        String model = aiProperties.getGemini().getModel();
-        if (!StringUtils.hasText(model)) {
-            return "models/gemini-2.0-flash";
-        }
-        String trimmedModel = model.trim();
-        return trimmedModel.startsWith("models/") ? trimmedModel : "models/" + trimmedModel;
-    }
-
-    private String extractText(GeminiGenerateResponse response) {
-        if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
-            return "";
-        }
-
-        Candidate firstCandidate = response.candidates().getFirst();
-        if (firstCandidate.content() == null || firstCandidate.content().parts() == null) {
-            return "";
-        }
-
-        StringBuilder text = new StringBuilder();
-        for (Part part : firstCandidate.content().parts()) {
-            if (StringUtils.hasText(part.text())) {
-                if (!text.isEmpty()) {
-                    text.append(System.lineSeparator());
-                }
-                text.append(part.text().trim());
-            }
-        }
-        return text.toString();
-    }
-
     private String shorten(String message) {
         if (!StringUtils.hasText(message)) {
             return "Unknown error";
@@ -148,17 +86,5 @@ public class GeminiChatClient {
     }
 
     public record GeminiResult(String response, String model) {
-    }
-
-    private record GeminiGenerateResponse(List<Candidate> candidates) {
-    }
-
-    private record Candidate(Content content, String finishReason) {
-    }
-
-    private record Content(List<Part> parts, String role) {
-    }
-
-    private record Part(String text) {
     }
 }

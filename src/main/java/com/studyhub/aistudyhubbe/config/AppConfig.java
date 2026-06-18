@@ -11,7 +11,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
         JwtProperties.class,
         AuthProperties.class,
         AdminSeedProperties.class,
-        AiProperties.class
+        AiProperties.class,
+        RagProperties.class
 })
 public class AppConfig {
 

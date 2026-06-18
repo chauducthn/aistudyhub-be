@@ -1,5 +1,6 @@
 package com.studyhub.aistudyhubbe.controller;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -72,12 +73,34 @@ class ChatbotControllerIntegrationTest {
                         .content("""
                                 {"documentId":%d,"message":"Read private document"}
                                 """.formatted(documentId)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("permission")));
+
+        mockMvc.perform(patch("/api/documents/%d/visibility".formatted(documentId))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"PUBLIC\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/chatbot/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + viewerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"documentId":%d,"message":"Summarize public notes"}
+                                """.formatted(documentId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.documentId").value(documentId))
+                .andExpect(jsonPath("$.data.response").value(org.hamcrest.Matchers.containsString("chat content")));
 
         mockMvc.perform(get("/api/chatbot/history")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(2));
+
+        mockMvc.perform(get("/api/chatbot/history")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + viewerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1));
 
         mockMvc.perform(delete("/api/chatbot/history")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken))
@@ -91,7 +114,7 @@ class ChatbotControllerIntegrationTest {
         mockMvc.perform(get("/api/admin/dashboard/metrics")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.chatbotApiCalls").value(2));
+                .andExpect(jsonPath("$.data.chatbotApiCalls").value(3));
     }
 
     private Integer uploadTextDocument(String token, String title, String content) throws Exception {
