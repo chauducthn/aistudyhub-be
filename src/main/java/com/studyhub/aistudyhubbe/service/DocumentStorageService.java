@@ -1,23 +1,37 @@
 package com.studyhub.aistudyhubbe.service;
 
-import com.cloudinary.Cloudinary;
-import com.cloudinary.utils.ObjectUtils;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 @Service
+@Profile("!test")
 public class DocumentStorageService {
 
     public static final long MAX_DOCUMENT_SIZE_BYTES = 20L * 1024L * 1024L;
@@ -42,10 +56,20 @@ public class DocumentStorageService {
             Map.entry("odp", "application/vnd.oasis.opendocument.presentation")
     );
 
-    private final Cloudinary cloudinary;
+    private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
+    private final String bucketName;
+    private final String region;
 
-    public DocumentStorageService(Cloudinary cloudinary) {
-        this.cloudinary = cloudinary;
+    public DocumentStorageService(
+            S3Client s3Client,
+            S3Presigner s3Presigner,
+            @Value("${aws.s3.bucket}") String bucketName,
+            @Value("${aws.region}") String region) {
+        this.s3Client = s3Client;
+        this.s3Presigner = s3Presigner;
+        this.bucketName = bucketName;
+        this.region = region;
     }
 
     public StoredDocumentFile storeDocument(Long userId, MultipartFile file) {
@@ -53,34 +77,70 @@ public class DocumentStorageService {
 
         String originalFilename = cleanOriginalFilename(file.getOriginalFilename());
         String extension = getExtension(originalFilename);
+        String contentType = resolveContentType(file, extension);
+        String s3Key = buildS3Key(userId, extension);
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .contentType(contentType)
+                .contentLength(file.getSize())
+                .metadata(Map.of("original-filename", originalFilename))
+                .build();
+
+        try (InputStream inputStream = file.getInputStream()) {
+            s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(inputStream, file.getSize()));
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not read document file for S3 upload");
+        } catch (S3Exception | SdkClientException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store document file on S3");
+        }
+
+        return new StoredDocumentFile(
+                s3Key,
+                buildS3Url(s3Key),
+                originalFilename,
+                extension.toUpperCase(Locale.ROOT),
+                file.getSize(),
+                contentType
+        );
+    }
+
+    public Path downloadToTempFile(String s3KeyOrUrl) {
+        String s3Key = resolveS3Key(s3KeyOrUrl);
 
         try {
-            Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
-                    "resource_type", "raw",
-                    "folder", "aistudyhub/documents/user-" + userId
-            ));
+            Path tempFile = Files.createTempFile("aistudyhub-doc-", ".tmp");
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .build();
 
-            return new StoredDocumentFile(
-                    uploadResult.get("secure_url").toString(),
-                    originalFilename,
-                    extension.toUpperCase(Locale.ROOT),
-                    file.getSize()
-            );
+            s3Client.getObject(getObjectRequest, ResponseTransformer.toFile(tempFile));
+            return tempFile;
         } catch (IOException ex) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store document file on Cloudinary");
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create temporary document file");
+        } catch (S3Exception | SdkClientException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to download document from S3");
         }
     }
 
-    public Path downloadToTempFile(String fileUrl) {
-        try {
-            Path tempFile = Files.createTempFile("aistudyhub-doc-", ".tmp");
-            try (InputStream in = new URL(fileUrl).openStream()) {
-                Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return tempFile;
-        } catch (IOException e) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to download document for processing");
-        }
+    public String createDownloadUrl(String s3KeyOrUrl, String originalFilename) {
+        String s3Key = resolveS3Key(s3KeyOrUrl);
+        String contentDisposition = "inline; filename=\"" + safeDownloadFilename(originalFilename) + "\"";
+
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .responseContentDisposition(contentDisposition)
+                .build();
+
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofMinutes(15))
+                .getObjectRequest(getObjectRequest)
+                .build();
+
+        return s3Presigner.presignGetObject(presignRequest).url().toExternalForm();
     }
 
     private void validateFile(MultipartFile file) {
@@ -114,7 +174,7 @@ public class DocumentStorageService {
     private String cleanOriginalFilename(String originalFilename) {
         String cleanName = StringUtils.cleanPath(originalFilename == null ? "" : originalFilename);
         cleanName = StringUtils.getFilename(cleanName);
-        if (cleanName.isBlank() || cleanName.contains("..")) {
+        if (cleanName == null || cleanName.isBlank() || cleanName.contains("..")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid document file name");
         }
         return cleanName;
@@ -128,11 +188,62 @@ public class DocumentStorageService {
         return filename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
     }
 
+    private String resolveContentType(MultipartFile file, String extension) {
+        String contentType = file.getContentType();
+        if (contentType == null || contentType.isBlank() || "application/octet-stream".equals(contentType)) {
+            return EXPECTED_CONTENT_TYPES.getOrDefault(extension, "application/octet-stream");
+        }
+        return contentType;
+    }
+
+    private String buildS3Key(Long userId, String extension) {
+        return "documents/"
+                + userId + "/"
+                + LocalDate.now() + "/"
+                + UUID.randomUUID()
+                + "."
+                + extension;
+    }
+
+    private String buildS3Url(String s3Key) {
+        return "https://" + bucketName + ".s3." + region + ".amazonaws.com/" + s3Key;
+    }
+
+    private String resolveS3Key(String s3KeyOrUrl) {
+        if (s3KeyOrUrl == null || s3KeyOrUrl.isBlank()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Document S3 key is missing");
+        }
+
+        if (!s3KeyOrUrl.startsWith("http://") && !s3KeyOrUrl.startsWith("https://")) {
+            return s3KeyOrUrl;
+        }
+
+        try {
+            String path = URI.create(s3KeyOrUrl).getPath();
+            String key = path.startsWith("/") ? path.substring(1) : path;
+            return URLDecoder.decode(key, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Invalid document S3 URL");
+        }
+    }
+
+    private String safeDownloadFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "document";
+        }
+        return filename.replace("\"", "");
+    }
+
     public record StoredDocumentFile(
+            String s3Key,
             String fileUrl,
             String originalFilename,
             String fileType,
-            long fileSize
+            long fileSize,
+            String contentType
     ) {
+        public StoredDocumentFile(String fileUrl, String originalFilename, String fileType, long fileSize) {
+            this(null, fileUrl, originalFilename, fileType, fileSize, null);
+        }
     }
 }

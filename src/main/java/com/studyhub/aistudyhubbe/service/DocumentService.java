@@ -6,6 +6,7 @@ import com.studyhub.aistudyhubbe.dto.DocumentVisibilityRequest;
 import com.studyhub.aistudyhubbe.dto.DocumentResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
 import com.studyhub.aistudyhubbe.entity.Document;
+import com.studyhub.aistudyhubbe.entity.DocumentExtractionStatus;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.Subject;
 import com.studyhub.aistudyhubbe.entity.User;
@@ -16,13 +17,14 @@ import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
 import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,11 +75,13 @@ public class DocumentService {
         document.setTitle(normalizeTitle(title));
         document.setDescription(normalizeDescription(description));
         document.setFileType(storedFile.fileType());
+        document.setContentType(storedFile.contentType());
         document.setFileSize(storedFile.fileSize());
+        document.setS3Key(storedFile.s3Key());
         document.setFileUrl(storedFile.fileUrl());
         document.setOriginalFilename(storedFile.originalFilename());
         document.setStatus(DocumentStatus.PRIVATE);
-        applyExtractionResult(document, storedFile);
+        applyExtractionResult(document, storedFile, file);
 
         return DocumentResponse.from(documentRepository.save(document));
     }
@@ -179,7 +183,11 @@ public class DocumentService {
                         EXCLUDED_NORMAL_STATUSES)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
 
-        return document.getFileUrl();
+        if (document.getS3Key() == null || document.getS3Key().isBlank()) {
+            return document.getFileUrl();
+        }
+
+        return documentStorageService.createDownloadUrl(document.getS3Key(), document.getOriginalFilename());
     }
 
     @Transactional
@@ -242,15 +250,23 @@ public class DocumentService {
         return keyword.trim();
     }
 
-    private void applyExtractionResult(Document document, StoredDocumentFile storedFile) {
+    private void applyExtractionResult(Document document, StoredDocumentFile storedFile, MultipartFile file) {
         Path tempPath = null;
         try {
-            tempPath = documentStorageService.downloadToTempFile(storedFile.fileUrl());
+            tempPath = Files.createTempFile(
+                    "aistudyhub-doc-upload-",
+                    "." + storedFile.fileType().toLowerCase(Locale.ROOT));
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, tempPath, StandardCopyOption.REPLACE_EXISTING);
+            }
             ExtractionResult extraction = documentTextExtractionService.extract(tempPath, storedFile.fileType());
             document.setExtractionStatus(extraction.status());
             document.setExtractedText(extraction.text());
             document.setExtractionError(extraction.error());
             document.setExtractedAt(extraction.extractedAt());
+        } catch (IOException ex) {
+            document.setExtractionStatus(DocumentExtractionStatus.FAILED);
+            document.setExtractionError("Could not prepare document for text extraction");
         } finally {
             if (tempPath != null) {
                 try {
@@ -258,35 +274,6 @@ public class DocumentService {
                 } catch (IOException ignored) {}
             }
         }
-    }
-
-    private String resolveContentType(Path documentPath, String fileType) {
-        try {
-            String probedContentType = Files.probeContentType(documentPath);
-            if (probedContentType != null && !probedContentType.isBlank()) {
-                return probedContentType;
-            }
-        } catch (IOException ignored) {
-            // Fall back to stored file type below.
-        }
-
-        return switch (fileType) {
-            case "PDF" -> "application/pdf";
-            case "DOC" -> "application/msword";
-            case "DOCX" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            case "PPT" -> "application/vnd.ms-powerpoint";
-            case "PPTX" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            case "TXT" -> "text/plain";
-            case "RTF" -> "application/rtf";
-            case "MD" -> "text/markdown";
-            case "XLS" -> "application/vnd.ms-excel";
-            case "XLSX" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-            case "CSV" -> "text/csv";
-            case "ODT" -> "application/vnd.oasis.opendocument.text";
-            case "ODS" -> "application/vnd.oasis.opendocument.spreadsheet";
-            case "ODP" -> "application/vnd.oasis.opendocument.presentation";
-            default -> "application/octet-stream";
-        };
     }
 
 }

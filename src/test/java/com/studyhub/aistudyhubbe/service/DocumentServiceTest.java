@@ -32,6 +32,7 @@ class DocumentServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private SubjectRepository subjectRepository;
     @Mock private DocumentStorageService documentStorageService;
+    @Mock private DocumentTextExtractionService documentTextExtractionService;
 
     @InjectMocks
     private DocumentService documentService;
@@ -66,6 +67,8 @@ class DocumentServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         // No subject provided
         when(documentStorageService.storeDocument(eq(1L), any())).thenReturn(storedFile);
+        when(documentTextExtractionService.extract(any(), eq("PDF")))
+                .thenReturn(DocumentTextExtractionService.ExtractionResult.extracted("dummy content"));
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
             doc.setId(10L); // mock auto-generated ID
