@@ -1,14 +1,11 @@
 package com.studyhub.aistudyhubbe.service;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,7 +13,6 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class AvatarStorageService {
 
-    private static final String PUBLIC_PATH_PREFIX = "/uploads/avatars/";
     private static final Map<String, String> EXTENSIONS_BY_CONTENT_TYPE = Map.of(
             "image/jpeg", ".jpg",
             "image/png", ".png",
@@ -25,53 +21,43 @@ public class AvatarStorageService {
     );
     private static final Set<String> ALLOWED_CONTENT_TYPES = EXTENSIONS_BY_CONTENT_TYPE.keySet();
 
-    private final Path avatarStoragePath;
+    private final Cloudinary cloudinary;
 
-    public AvatarStorageService(@Value("${app.storage.avatar-dir}") String avatarStorageDir) {
-        this.avatarStoragePath = Paths.get(avatarStorageDir).toAbsolutePath().normalize();
+    public AvatarStorageService(Cloudinary cloudinary) {
+        this.cloudinary = cloudinary;
     }
 
     public String storeAvatar(Long userId, MultipartFile file, String currentAvatarUrl) {
         validateFile(file);
 
         try {
-            Files.createDirectories(avatarStoragePath);
-            String extension = EXTENSIONS_BY_CONTENT_TYPE.get(file.getContentType());
-            String fileName = "user-" + userId + "-" + UUID.randomUUID() + extension;
-            Path destination = avatarStoragePath.resolve(fileName).normalize();
-
-            if (!destination.startsWith(avatarStoragePath)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid avatar file name");
-            }
-
-            file.transferTo(destination);
+            Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
+                    "resource_type", "image",
+                    "folder", "aistudyhub/avatars"
+            ));
+            
             deleteAvatar(currentAvatarUrl);
-            return PUBLIC_PATH_PREFIX + fileName;
+            return uploadResult.get("secure_url").toString();
         } catch (IOException ex) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store avatar file");
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store avatar on Cloudinary");
         }
     }
 
     public void deleteAvatar(String avatarUrl) {
-        if (avatarUrl == null || !avatarUrl.startsWith(PUBLIC_PATH_PREFIX)) {
-            return;
-        }
-
-        String fileName = avatarUrl.substring(PUBLIC_PATH_PREFIX.length());
-        Path avatarPath = avatarStoragePath.resolve(fileName).normalize();
-        if (!avatarPath.startsWith(avatarStoragePath)) {
+        if (avatarUrl == null || avatarUrl.isBlank()) {
             return;
         }
 
         try {
-            Files.deleteIfExists(avatarPath);
-        } catch (IOException ignored) {
+            if (avatarUrl.contains("cloudinary.com")) {
+                String[] parts = avatarUrl.split("/");
+                String filenameWithExt = parts[parts.length - 1];
+                String publicId = "aistudyhub/avatars/" + filenameWithExt.substring(0, filenameWithExt.lastIndexOf('.'));
+                cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());
+            }
+        } catch (Exception ignored) {
             // A stale avatar file should not block profile updates.
         }
-    }
-
-    public Path getAvatarStoragePath() {
-        return avatarStoragePath;
     }
 
     private void validateFile(MultipartFile file) {

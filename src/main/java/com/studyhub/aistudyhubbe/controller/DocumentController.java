@@ -10,7 +10,6 @@ import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.security.UserPrincipal;
 import com.studyhub.aistudyhubbe.service.DocumentService;
-import com.studyhub.aistudyhubbe.service.DocumentService.DownloadedDocument;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -18,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -151,19 +149,13 @@ public class DocumentController {
 
     @Operation(summary = "Download a public document or the current user's private document")
     @GetMapping("/{id}/download")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadDocument(
+    public ResponseEntity<Void> downloadDocument(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long id) {
-        DownloadedDocument download = documentService.downloadDocument(requireUserId(principal), id);
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(download.contentType()))
-                .contentLength(download.contentLength())
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename(download.filename(), StandardCharsets.UTF_8)
-                        .build()
-                        .toString())
-                .body(download.resource());
+        String url = documentService.getDocumentDownloadUrl(requireUserId(principal), id);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, url)
+                .build();
     }
 
     @Operation(summary = "Soft delete current user's document")
