@@ -42,6 +42,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
     private final AuthProperties authProperties;
+    private final EmailService emailService;
 
     public AuthService(
             UserRepository userRepository,
@@ -50,7 +51,8 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             JwtProperties jwtProperties,
-            AuthProperties authProperties) {
+            AuthProperties authProperties,
+            EmailService emailService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -58,6 +60,7 @@ public class AuthService {
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
         this.authProperties = authProperties;
+        this.emailService = emailService;
     }
 
     @Transactional
@@ -152,7 +155,12 @@ public class AuthService {
         String resetLink = authProperties.getPasswordResetFrontendUrl()
                 + "?token="
                 + resetToken.getToken();
-        log.info("Password reset requested for {} — link: {}", normalizedEmail, resetLink);
+
+        try {
+            emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+        } catch (RuntimeException ex) {
+            log.error("Could not send password reset email to {}", normalizedEmail, ex);
+        }
 
         String exposedToken = authProperties.isExposeResetTokenInResponse()
                 ? resetToken.getToken()
