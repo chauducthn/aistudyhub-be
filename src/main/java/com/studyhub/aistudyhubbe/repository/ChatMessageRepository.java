@@ -15,4 +15,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     @Modifying
     @Query("update ChatMessage c set c.visibleToUser = false where c.user.id = :userId")
     void hideByUserId(@Param("userId") Long userId);
+
+    @Modifying
+    @Query("delete from ChatMessage c where c.user.id = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 }

@@ -34,6 +34,9 @@ public class User {
     @Column(name = "full_name", nullable = false)
     private String fullName;
 
+    @Column(name = "phone", length = 32)
+    private String phone;
+
     @Column(name = "avatar_url")
     private String avatarUrl;
 
@@ -84,6 +87,14 @@ public class User {
 
     public void setFullName(String fullName) {
         this.fullName = fullName;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
     }
 
     public String getAvatarUrl() {
