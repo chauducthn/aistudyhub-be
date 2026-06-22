@@ -7,12 +7,17 @@ import com.studyhub.aistudyhubbe.entity.DocumentExtractionStatus;
 import com.studyhub.aistudyhubbe.repository.DocumentChunkRepository;
 import java.util.Comparator;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
 public class RagRetrievalService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(RagRetrievalService.class);
+    private static final double MIN_EMBEDDING_SCORE = 0.15D;
 
     private final RagProperties ragProperties;
     private final DocumentChunkRepository documentChunkRepository;
@@ -50,23 +55,28 @@ public class RagRetrievalService {
         if (!StringUtils.hasText(document.getExtractedText())) {
             return "No readable text was extracted from this document.";
         }
-        if (!ragProperties.isEnabled()) {
-            return truncate(document.getExtractedText());
-        }
 
-        List<DocumentChunk> storedChunks = documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(document.getId());
+        List<DocumentChunk> storedChunks = ragProperties.isEnabled()
+                ? documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(document.getId())
+                : List.of();
+        List<String> availableChunks = storedChunks.isEmpty()
+                ? textChunkingService.chunk(document.getExtractedText())
+                : storedChunks.stream().map(DocumentChunk::getContent).toList();
         List<String> selected = storedChunks.isEmpty()
-                ? fallbackChunks(document.getExtractedText(), userQuery)
+                ? rankTextChunks(availableChunks, userQuery)
                 : rankStoredChunks(storedChunks, userQuery);
 
-        if (selected.isEmpty()) {
-            return truncate(document.getExtractedText());
+        if (!selected.isEmpty()) {
+            return """
+                    Relevant excerpts:
+
+                    %s
+                    """.formatted(joinChunks(selected));
         }
-        return joinChunks(selected);
+        return buildOverviewContext(availableChunks);
     }
 
-    private List<String> fallbackChunks(String text, String userQuery) {
-        List<String> chunks = textChunkingService.chunk(text);
+    private List<String> rankTextChunks(List<String> chunks, String userQuery) {
         return keywordChunkRanker.rank(userQuery, chunks, ragProperties.getTopK()).stream()
                 .map(KeywordChunkRanker.RankedChunk::content)
                 .toList();
@@ -75,22 +85,41 @@ public class RagRetrievalService {
     private List<String> rankStoredChunks(List<DocumentChunk> storedChunks, String userQuery) {
         boolean hasEmbeddings = storedChunks.stream().anyMatch(chunk -> StringUtils.hasText(chunk.getEmbedding()));
         if (hasEmbeddings && geminiEmbeddingClient.isConfigured()) {
-            float[] queryVector = geminiEmbeddingClient.embed(userQuery);
-            return storedChunks.stream()
-                    .filter(chunk -> StringUtils.hasText(chunk.getEmbedding()))
-                    .map(chunk -> new ScoredChunk(
-                            chunk.getContent(),
-                            cosineSimilarity.score(queryVector, chunkEmbeddingCodec.decode(chunk.getEmbedding()))))
-                    .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
-                    .limit(ragProperties.getTopK())
-                    .map(ScoredChunk::content)
-                    .toList();
+            try {
+                float[] queryVector = geminiEmbeddingClient.embedQuestion(userQuery);
+                List<String> semanticMatches = storedChunks.stream()
+                        .filter(chunk -> StringUtils.hasText(chunk.getEmbedding()))
+                        .map(chunk -> new ScoredChunk(
+                                chunk.getContent(),
+                                cosineSimilarity.score(queryVector, chunkEmbeddingCodec.decode(chunk.getEmbedding()))))
+                        .filter(chunk -> chunk.score() >= MIN_EMBEDDING_SCORE)
+                        .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
+                        .limit(ragProperties.getTopK())
+                        .map(ScoredChunk::content)
+                        .toList();
+                if (!semanticMatches.isEmpty()) {
+                    return semanticMatches;
+                }
+            } catch (RuntimeException ex) {
+                LOGGER.warn("Embedding retrieval failed. Falling back to keyword retrieval: {}", ex.getMessage());
+            }
         }
+        return rankTextChunks(storedChunks.stream().map(DocumentChunk::getContent).toList(), userQuery);
+    }
 
-        List<String> contents = storedChunks.stream().map(DocumentChunk::getContent).toList();
-        return keywordChunkRanker.rank(userQuery, contents, ragProperties.getTopK()).stream()
-                .map(KeywordChunkRanker.RankedChunk::content)
-                .toList();
+    private String buildOverviewContext(List<String> chunks) {
+        List<String> overview = representativeChunks(chunks);
+        if (overview.isEmpty()) {
+            return "No relevant document context was found for this question.";
+        }
+        return """
+                No exact excerpt matched the user's wording. Use these representative document excerpts only as background,
+                then answer cautiously. If the answer cannot be inferred from them, say the document is insufficient.
+
+                Representative excerpts:
+
+                %s
+                """.formatted(joinChunks(overview));
     }
 
     private String joinChunks(List<String> chunks) {
@@ -107,12 +136,23 @@ public class RagRetrievalService {
         return builder.isEmpty() ? "No relevant document context was found." : builder.toString();
     }
 
-    private String truncate(String text) {
-        String normalized = text.trim();
-        if (normalized.length() <= ragProperties.getMaxContextChars()) {
-            return normalized;
+    private List<String> representativeChunks(List<String> chunks) {
+        if (chunks.isEmpty()) {
+            return List.of();
         }
-        return normalized.substring(0, ragProperties.getMaxContextChars());
+        int topK = Math.max(ragProperties.getTopK(), 1);
+        if (chunks.size() <= topK) {
+            return chunks;
+        }
+        if (topK == 1) {
+            return List.of(chunks.getFirst());
+        }
+
+        return java.util.stream.IntStream.range(0, topK)
+                .map(i -> Math.min((int) Math.round(i * (chunks.size() - 1D) / (topK - 1D)), chunks.size() - 1))
+                .distinct()
+                .mapToObj(chunks::get)
+                .toList();
     }
 
     private record ScoredChunk(String content, double score) {

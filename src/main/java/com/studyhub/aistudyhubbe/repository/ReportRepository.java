@@ -2,6 +2,7 @@ package com.studyhub.aistudyhubbe.repository;
 
 import com.studyhub.aistudyhubbe.entity.Report;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -50,4 +51,7 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             ReportStatus status);
 
     long countByStatus(ReportStatus status);
+
+    @Query("select r.status, count(r) from Report r group by r.status")
+    List<Object[]> countGroupedByStatus();
 }

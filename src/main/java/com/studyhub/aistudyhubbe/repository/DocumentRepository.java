@@ -183,5 +183,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     long countByStatus(DocumentStatus status);
 
+    @Query("select d.status, count(d) from Document d group by d.status")
+    List<Object[]> countGroupedByStatus();
+
     long countBySubjectId(Long subjectId);
 }
