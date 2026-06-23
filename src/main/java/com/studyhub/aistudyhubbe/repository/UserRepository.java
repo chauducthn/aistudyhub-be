@@ -8,6 +8,8 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
@@ -25,4 +27,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
     long countByCreatedAtAfter(Instant createdAt);
 
     List<User> findByCreatedAtAfter(Instant createdAt);
+
+    @Query(
+            value = """
+                    select date(created_at) as day, count(*) as total
+                    from users
+                    where created_at >= :startInstant
+                    group by date(created_at)
+                    """,
+            nativeQuery = true)
+    List<Object[]> countDailyRegistrations(@Param("startInstant") Instant startInstant);
 }
