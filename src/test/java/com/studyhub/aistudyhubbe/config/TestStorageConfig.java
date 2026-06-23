@@ -3,6 +3,7 @@ package com.studyhub.aistudyhubbe.config;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.service.AvatarStorageService;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService;
+import com.studyhub.aistudyhubbe.service.DocumentStorageService.DownloadedDocumentFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -104,6 +105,33 @@ public class TestStorageConfig {
         }
 
         @Override
+        public DownloadedDocumentFile downloadDocumentFile(String s3KeyOrUrl) {
+            String prefix = "/uploads/documents/";
+            if (s3KeyOrUrl == null || s3KeyOrUrl.isBlank()) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Invalid test document URL");
+            }
+
+            String storageKey = s3KeyOrUrl.startsWith(prefix) ? s3KeyOrUrl.substring(prefix.length()) : s3KeyOrUrl;
+            Path source = documentRoot.resolve(storageKey).normalize();
+            Path absoluteRoot = documentRoot.toAbsolutePath().normalize();
+            Path absoluteSource = source.toAbsolutePath().normalize();
+            if (!absoluteSource.startsWith(absoluteRoot)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid test document path");
+            }
+
+            try {
+                byte[] bytes = Files.readAllBytes(source);
+                String contentType = Files.probeContentType(source);
+                return new DownloadedDocumentFile(
+                        bytes,
+                        contentType == null ? "application/octet-stream" : contentType,
+                        bytes.length);
+            } catch (IOException ex) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to read test document");
+            }
+        }
+
+        @Override
         public String createDownloadUrl(String s3KeyOrUrl, String originalFilename) {
             String prefix = "/uploads/documents/";
             if (s3KeyOrUrl == null || s3KeyOrUrl.isBlank()) {
@@ -136,7 +164,7 @@ public class TestStorageConfig {
         private final Path avatarRoot;
 
         private LocalTestAvatarStorageService(Path avatarRoot) {
-            super(null);
+            super(null, "test-bucket", "ap-southeast-2");
             this.avatarRoot = avatarRoot;
         }
 

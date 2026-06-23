@@ -11,12 +11,12 @@ class TextChunkingServiceTest {
     @Test
     void chunksLongTextWithOverlap() {
         RagProperties properties = new RagProperties();
-        properties.setChunkSize(40);
-        properties.setChunkOverlap(10);
+        properties.setChunkSize(200);
+        properties.setChunkOverlap(40);
         properties.setMaxChunksPerDocument(10);
 
         TextChunkingService service = new TextChunkingService(properties);
-        String text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron";
+        String text = "alpha ".repeat(80).trim();
 
         var chunks = service.chunk(text);
         assertFalse(chunks.isEmpty());
