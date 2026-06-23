@@ -57,6 +57,7 @@ public class AdminService {
     private final DocumentChunkRepository documentChunkRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
+    private final DocumentStorageService documentStorageService;
 
     public AdminService(
             UserRepository userRepository,
@@ -68,7 +69,8 @@ public class AdminService {
             ChatMessageRepository chatMessageRepository,
             DocumentChunkRepository documentChunkRepository,
             PasswordResetTokenRepository passwordResetTokenRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            DocumentStorageService documentStorageService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.storageUsageService = storageUsageService;
@@ -79,6 +81,7 @@ public class AdminService {
         this.documentChunkRepository = documentChunkRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
+        this.documentStorageService = documentStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -146,6 +149,31 @@ public class AdminService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
         document.setStatus(status);
         return AdminDocumentResponse.from(documentRepository.save(document));
+    }
+
+    @Transactional(readOnly = true)
+    public String getDocumentDownloadUrl(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getS3Key() == null || document.getS3Key().isBlank()) {
+            return document.getFileUrl();
+        }
+
+        return documentStorageService.createDownloadUrl(document.getS3Key(), document.getOriginalFilename());
+    }
+
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true)
+    })
+    public void deleteDocument(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        reportRepository.deleteByDocumentId(document.getId());
+        documentChunkRepository.deleteByDocumentId(document.getId());
+        documentRepository.delete(document);
     }
 
     @Transactional
