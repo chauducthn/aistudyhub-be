@@ -2,6 +2,7 @@ package com.studyhub.aistudyhubbe.repository;
 
 import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
+import com.studyhub.aistudyhubbe.repository.projection.DocumentStatusCount;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -184,4 +185,11 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     long countByStatus(DocumentStatus status);
 
     long countBySubjectId(Long subjectId);
+
+    @Query("""
+            select d.status as status, count(d) as total
+            from Document d
+            group by d.status
+            """)
+    List<DocumentStatusCount> countGroupedByStatus();
 }

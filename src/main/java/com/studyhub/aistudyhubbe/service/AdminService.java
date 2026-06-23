@@ -5,6 +5,7 @@ import com.studyhub.aistudyhubbe.dto.AdminDocumentResponse;
 import com.studyhub.aistudyhubbe.dto.AdminUpdateUserRequest;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
+import com.studyhub.aistudyhubbe.config.CacheNames;
 import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
@@ -19,11 +20,19 @@ import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.ChatMessageRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
+import com.studyhub.aistudyhubbe.repository.projection.DocumentStatusCount;
+import com.studyhub.aistudyhubbe.repository.projection.ReportStatusCount;
+import java.sql.Date;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -122,6 +131,10 @@ public class AdminService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true)
+    })
     public AdminDocumentResponse updateDocumentStatus(Long documentId, DocumentStatus status) {
         if (!isAdminDocumentStatus(status)) {
             throw new ApiException(
@@ -136,6 +149,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
     public AdminUserResponse updateUserStatus(Long actorId, Long userId, UserStatus status) {
         if (actorId.equals(userId)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Admins cannot change their own account status");
@@ -201,6 +215,7 @@ public class AdminService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheNames.ADMIN_DASHBOARD, key = "'metrics'")
     public AdminDashboardMetricsResponse getDashboardMetrics() {
         Instant sevenDaysAgo = Instant.now().minusSeconds(7L * 24 * 60 * 60);
         long usedBytes = storageUsageService.calculateUsedBytes();
@@ -230,29 +245,45 @@ public class AdminService {
     }
 
     private AdminDashboardMetricsResponse.DocumentMetrics buildDocumentMetrics() {
-        long hiddenDocuments = documentRepository.countByStatus(DocumentStatus.HIDDEN);
-        long lockedDocuments = documentRepository.countByStatus(DocumentStatus.LOCKED);
-        long removedDocuments = documentRepository.countByStatus(DocumentStatus.REMOVED);
+        Map<DocumentStatus, Long> counts = documentRepository.countGroupedByStatus().stream()
+                .collect(Collectors.toMap(
+                        DocumentStatusCount::getStatus,
+                        DocumentStatusCount::getTotal,
+                        Long::sum,
+                        () -> new EnumMap<>(DocumentStatus.class)));
+
+        long hiddenDocuments = counts.getOrDefault(DocumentStatus.HIDDEN, 0L);
+        long lockedDocuments = counts.getOrDefault(DocumentStatus.LOCKED, 0L);
+        long removedDocuments = counts.getOrDefault(DocumentStatus.REMOVED, 0L);
+        long totalDocuments = counts.values().stream().mapToLong(Long::longValue).sum();
 
         return new AdminDashboardMetricsResponse.DocumentMetrics(
-                documentRepository.count(),
-                documentRepository.countByStatus(DocumentStatus.PUBLIC),
-                documentRepository.countByStatus(DocumentStatus.PRIVATE),
+                totalDocuments,
+                counts.getOrDefault(DocumentStatus.PUBLIC, 0L),
+                counts.getOrDefault(DocumentStatus.PRIVATE, 0L),
                 hiddenDocuments,
                 lockedDocuments,
                 removedDocuments,
-                documentRepository.countByStatus(DocumentStatus.DELETED),
+                counts.getOrDefault(DocumentStatus.DELETED, 0L),
                 hiddenDocuments + lockedDocuments + removedDocuments
         );
     }
 
     private AdminDashboardMetricsResponse.ReportMetrics buildReportMetrics() {
+        Map<ReportStatus, Long> counts = reportRepository.countGroupedByStatus().stream()
+                .collect(Collectors.toMap(
+                        ReportStatusCount::getStatus,
+                        ReportStatusCount::getTotal,
+                        Long::sum,
+                        () -> new EnumMap<>(ReportStatus.class)));
+
+        long totalReports = counts.values().stream().mapToLong(Long::longValue).sum();
         return new AdminDashboardMetricsResponse.ReportMetrics(
-                reportRepository.count(),
-                reportRepository.countByStatus(ReportStatus.PENDING),
-                reportRepository.countByStatus(ReportStatus.REVIEWED),
-                reportRepository.countByStatus(ReportStatus.REJECTED),
-                reportRepository.countByStatus(ReportStatus.RESOLVED)
+                totalReports,
+                counts.getOrDefault(ReportStatus.PENDING, 0L),
+                counts.getOrDefault(ReportStatus.REVIEWED, 0L),
+                counts.getOrDefault(ReportStatus.REJECTED, 0L),
+                counts.getOrDefault(ReportStatus.RESOLVED, 0L)
         );
     }
 
@@ -260,20 +291,28 @@ public class AdminService {
         ZoneId zoneId = ZoneId.systemDefault();
         LocalDate startDate = LocalDate.now(zoneId).minusDays(6);
         Instant startInstant = startDate.atStartOfDay(zoneId).toInstant();
-        List<User> recentUsers = userRepository.findByCreatedAtAfter(startInstant);
+        Map<LocalDate, Long> dailyCounts = userRepository.countDailyRegistrations(startInstant).stream()
+                .collect(Collectors.toMap(
+                        row -> toLocalDate(row[0]),
+                        row -> ((Number) row[1]).longValue()));
 
         return java.util.stream.IntStream.rangeClosed(0, 6)
                 .mapToObj(startDate::plusDays)
                 .map(date -> new AdminDashboardMetricsResponse.DailyUserMetric(
                         date,
-                        recentUsers.stream()
-                                .map(User::getCreatedAt)
-                                .filter(createdAt -> createdAt != null)
-                                .map(createdAt -> createdAt.atZone(zoneId).toLocalDate())
-                                .filter(date::equals)
-                                .count()))
-                .sorted(Comparator.comparing(AdminDashboardMetricsResponse.DailyUserMetric::date))
+                        dailyCounts.getOrDefault(date, 0L)))
+                .sorted(java.util.Comparator.comparing(AdminDashboardMetricsResponse.DailyUserMetric::date))
                 .toList();
+    }
+
+    private LocalDate toLocalDate(Object value) {
+        if (value instanceof Date sqlDate) {
+            return sqlDate.toLocalDate();
+        }
+        if (value instanceof LocalDate localDate) {
+            return localDate;
+        }
+        throw new IllegalStateException("Unexpected date type: " + value.getClass().getName());
     }
 
     private double round2(double value) {
