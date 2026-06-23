@@ -46,7 +46,8 @@ public class GeminiChatClient {
         try {
             GeminiGenerateResponse response = restClient()
                     .post()
-                    .uri("/%s:generateContent?key={apiKey}".formatted(requestBuilder.modelPath()), aiProperties.getGemini().getApiKey())
+                    .uri("/%s:generateContent".formatted(requestBuilder.modelPath()))
+                    .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
                     .body(requestBuilder.build(prompt, documentTitle, documentContext))
                     .retrieve()
                     .body(GeminiGenerateResponse.class);

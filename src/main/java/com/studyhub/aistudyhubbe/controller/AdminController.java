@@ -19,6 +19,9 @@ import com.studyhub.aistudyhubbe.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.Map;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -122,6 +125,22 @@ public class AdminController {
         return ApiResponse.ok(
                 "Document status updated",
                 adminService.updateDocumentStatus(documentId, request.status()));
+    }
+
+    @Operation(summary = "Download a document for admin")
+    @GetMapping("/documents/{documentId}/download")
+    public ResponseEntity<Void> downloadDocument(@PathVariable Long documentId) {
+        String url = adminService.getDocumentDownloadUrl(documentId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, url)
+                .build();
+    }
+
+    @Operation(summary = "Delete a document for admin")
+    @DeleteMapping("/documents/{documentId}")
+    public ApiResponse<Void> deleteDocument(@PathVariable Long documentId) {
+        adminService.deleteDocument(documentId);
+        return ApiResponse.ok("Document deleted", null);
     }
 
     @Operation(summary = "List document reports for admin review")

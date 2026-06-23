@@ -51,6 +51,10 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             Long reporterId,
             ReportStatus status);
 
+    @Modifying
+    @Query("delete from Report r where r.document.id = :documentId")
+    void deleteByDocumentId(@Param("documentId") Long documentId);
+
     long countByStatus(ReportStatus status);
 
     @Query("""

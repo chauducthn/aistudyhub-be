@@ -40,7 +40,8 @@ public class GeminiEmbeddingClient {
         try {
             EmbedResponse response = restClient()
                     .post()
-                    .uri("/%s:embedContent?key={apiKey}".formatted(modelPath()), aiProperties.getGemini().getApiKey())
+                    .uri("/%s:embedContent".formatted(modelPath()))
+                    .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
                     .body(Map.of("content", Map.of("parts", List.of(Map.of("text", text.trim())))))
                     .retrieve()
                     .body(EmbedResponse.class);
