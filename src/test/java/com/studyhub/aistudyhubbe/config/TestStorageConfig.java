@@ -164,8 +164,13 @@ public class TestStorageConfig {
         private final Path avatarRoot;
 
         private LocalTestAvatarStorageService(Path avatarRoot) {
-            super(null, "test-bucket", "ap-southeast-2");
+            super(null, null, "test-bucket", "ap-southeast-2");
             this.avatarRoot = avatarRoot;
+        }
+
+        @Override
+        public String presignAvatarUrl(String avatarUrl) {
+            return avatarUrl;
         }
 
         @Override
