@@ -9,6 +9,7 @@ import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
+import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,7 @@ class DocumentServiceTest {
     @Mock private SubjectRepository subjectRepository;
     @Mock private DocumentStorageService documentStorageService;
     @Mock private DocumentTextExtractionService documentTextExtractionService;
+    @Mock private DocumentChunkIndexer documentChunkIndexer;
 
     @InjectMocks
     private DocumentService documentService;

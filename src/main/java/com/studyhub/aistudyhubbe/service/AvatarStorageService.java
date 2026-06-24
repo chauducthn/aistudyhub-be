@@ -6,7 +6,6 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
@@ -20,18 +19,15 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 @Service
 @Profile("!test")
 public class AvatarStorageService {
 
     private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024L * 1024L;
-    private static final Duration PRESIGN_DURATION = Duration.ofDays(7);
+    private static final String S3_AVATAR_PREFIX = "avatars/";
     private static final Map<String, String> EXTENSIONS_BY_CONTENT_TYPE = Map.of(
             "image/jpeg", "jpg",
             "image/png", "png",
@@ -41,17 +37,14 @@ public class AvatarStorageService {
     private static final Set<String> ALLOWED_CONTENT_TYPES = EXTENSIONS_BY_CONTENT_TYPE.keySet();
 
     private final S3Client s3Client;
-    private final S3Presigner s3Presigner;
     private final String bucketName;
     private final String region;
 
     public AvatarStorageService(
             S3Client s3Client,
-            S3Presigner s3Presigner,
             @Value("${aws.s3.bucket}") String bucketName,
             @Value("${aws.region}") String region) {
         this.s3Client = s3Client;
-        this.s3Presigner = s3Presigner;
         this.bucketName = bucketName;
         this.region = region;
     }
@@ -59,48 +52,9 @@ public class AvatarStorageService {
     public String storeAvatar(Long userId, MultipartFile file, String currentAvatarUrl) {
         validateFile(file);
 
-        String contentType = file.getContentType();
-        String extension = EXTENSIONS_BY_CONTENT_TYPE.get(contentType);
-        String s3Key = "avatars/" + userId + "/" + LocalDate.now() + "/" + UUID.randomUUID() + "." + extension;
-
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(s3Key)
-                .contentType(contentType)
-                .contentLength(file.getSize())
-                .build();
-
-        try (InputStream inputStream = file.getInputStream()) {
-            s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(inputStream, file.getSize()));
-        } catch (IOException ex) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not read avatar file for S3 upload");
-        } catch (S3Exception | SdkClientException ex) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store avatar on S3");
-        }
-
+        String avatarUrl = storeS3Avatar(userId, file);
         deleteAvatar(currentAvatarUrl);
-        return "https://" + bucketName + ".s3." + region + ".amazonaws.com/" + s3Key;
-    }
-
-    public String presignAvatarUrl(String avatarUrl) {
-        String s3Key = resolveS3Key(avatarUrl);
-        if (s3Key == null) {
-            return avatarUrl;
-        }
-
-        try {
-            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(s3Key)
-                    .build();
-            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                    .signatureDuration(PRESIGN_DURATION)
-                    .getObjectRequest(getObjectRequest)
-                    .build();
-            return s3Presigner.presignGetObject(presignRequest).url().toExternalForm();
-        } catch (S3Exception | SdkClientException ex) {
-            return avatarUrl;
-        }
+        return avatarUrl;
     }
 
     public void deleteAvatar(String avatarUrl) {
@@ -108,29 +62,62 @@ public class AvatarStorageService {
             return;
         }
 
-        String s3Key = resolveS3Key(avatarUrl);
+        String s3Key = resolveS3AvatarKey(avatarUrl);
         if (s3Key == null) {
             return;
         }
 
         try {
-            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(s3Key).build());
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .build());
         } catch (S3Exception | SdkClientException ignored) {
             // A stale avatar file should not block profile updates.
         }
     }
 
-    private String resolveS3Key(String avatarUrl) {
-        if (!avatarUrl.startsWith("http://") && !avatarUrl.startsWith("https://")) {
+    private String storeS3Avatar(Long userId, MultipartFile file) {
+        String extension = EXTENSIONS_BY_CONTENT_TYPE.get(file.getContentType());
+        String s3Key = S3_AVATAR_PREFIX
+                + userId + "/"
+                + LocalDate.now() + "/"
+                + UUID.randomUUID()
+                + extension;
+
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(s3Key)
+                .contentType(file.getContentType())
+                .contentLength(file.getSize())
+                .build();
+
+        try (InputStream inputStream = file.getInputStream()) {
+            s3Client.putObject(putObjectRequest, RequestBody.fromInputStream(inputStream, file.getSize()));
+            return buildS3Url(s3Key);
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not read avatar file for S3 upload");
+        } catch (S3Exception | SdkClientException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store avatar on S3");
+        }
+    }
+
+    private String resolveS3AvatarKey(String avatarUrl) {
+        if (avatarUrl.startsWith(S3_AVATAR_PREFIX)) {
             return avatarUrl;
         }
-        if (!avatarUrl.contains(".amazonaws.com/")) {
+        if (!avatarUrl.startsWith("http://") && !avatarUrl.startsWith("https://")) {
             return null;
         }
+
         try {
-            String path = URI.create(avatarUrl).getPath();
-            String key = path.startsWith("/") ? path.substring(1) : path;
-            return URLDecoder.decode(key, StandardCharsets.UTF_8);
+            String key = URI.create(avatarUrl).getPath();
+            key = key.startsWith("/") ? key.substring(1) : key;
+            key = URLDecoder.decode(key, StandardCharsets.UTF_8);
+            if (key.startsWith(S3_AVATAR_PREFIX)) {
+                return key;
+            }
+            return null;
         } catch (IllegalArgumentException ex) {
             return null;
         }
@@ -142,11 +129,15 @@ public class AvatarStorageService {
         }
 
         if (file.getSize() > MAX_AVATAR_SIZE_BYTES) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Avatar must not exceed 5MB");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Avatar image must not exceed 5MB");
         }
 
         if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Avatar must be a JPG, PNG, WEBP, or GIF image");
         }
+    }
+
+    private String buildS3Url(String s3Key) {
+        return "https://" + bucketName + ".s3." + region + ".amazonaws.com/" + s3Key;
     }
 }

@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -146,10 +147,9 @@ class AdminControllerIntegrationTest {
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + viewerToken))
-                .andExpect(status().isFound())
-                .andExpect(header().string(
-                        HttpHeaders.LOCATION,
-                        org.hamcrest.Matchers.startsWith("/uploads/documents/")));
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(content().string("moderation content"));
 
         mockMvc.perform(get("/api/admin/documents")
                         .param("keyword", "Moderation")

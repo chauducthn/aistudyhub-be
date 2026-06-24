@@ -16,6 +16,7 @@ import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
+import com.studyhub.aistudyhubbe.service.DocumentStorageService.DownloadedDocumentFile;
 import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
 import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
 import java.io.IOException;
@@ -205,7 +206,7 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
-    public String getDocumentDownloadUrl(Long userId, Long documentId) {
+    public DocumentDownloadFile getDocumentDownloadFile(Long userId, Long documentId) {
         Document document = documentRepository.findDownloadableById(
                         documentId,
                         userId,
@@ -213,11 +214,19 @@ public class DocumentService {
                         EXCLUDED_NORMAL_STATUSES)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
 
-        if (document.getS3Key() == null || document.getS3Key().isBlank()) {
-            return document.getFileUrl();
-        }
+        String storageKey = document.getS3Key() == null || document.getS3Key().isBlank()
+                ? document.getFileUrl()
+                : document.getS3Key();
+        DownloadedDocumentFile file = documentStorageService.downloadDocumentFile(storageKey);
+        String contentType = file.contentType() == null || file.contentType().isBlank()
+                ? document.getContentType()
+                : file.contentType();
 
-        return documentStorageService.createDownloadUrl(document.getS3Key(), document.getOriginalFilename());
+        return new DocumentDownloadFile(
+                file.bytes(),
+                document.getOriginalFilename(),
+                contentType,
+                file.contentLength());
     }
 
     @Transactional
@@ -310,4 +319,10 @@ public class DocumentService {
         }
     }
 
+    public record DocumentDownloadFile(
+            byte[] bytes,
+            String originalFilename,
+            String contentType,
+            long contentLength
+    ) {}
 }

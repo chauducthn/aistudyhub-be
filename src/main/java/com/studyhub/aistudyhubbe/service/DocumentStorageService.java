@@ -21,10 +21,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -143,6 +145,25 @@ public class DocumentStorageService {
         return s3Presigner.presignGetObject(presignRequest).url().toExternalForm();
     }
 
+    public DownloadedDocumentFile downloadDocumentFile(String s3KeyOrUrl) {
+        String s3Key = resolveS3Key(s3KeyOrUrl);
+
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .build();
+            ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(getObjectRequest);
+            GetObjectResponse response = objectBytes.response();
+            return new DownloadedDocumentFile(
+                    objectBytes.asByteArray(),
+                    response.contentType(),
+                    response.contentLength() == null ? objectBytes.asByteArray().length : response.contentLength());
+        } catch (S3Exception | SdkClientException ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to download document from S3");
+        }
+    }
+
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Document file is required");
@@ -246,4 +267,10 @@ public class DocumentStorageService {
             this(null, fileUrl, originalFilename, fileType, fileSize, null);
         }
     }
+
+    public record DownloadedDocumentFile(
+            byte[] bytes,
+            String contentType,
+            long contentLength
+    ) {}
 }
