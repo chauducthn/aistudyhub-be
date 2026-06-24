@@ -29,10 +29,10 @@ public class AvatarStorageService {
     private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024L * 1024L;
     private static final String S3_AVATAR_PREFIX = "avatars/";
     private static final Map<String, String> EXTENSIONS_BY_CONTENT_TYPE = Map.of(
-            "image/jpeg", ".jpg",
-            "image/png", ".png",
-            "image/webp", ".webp",
-            "image/gif", ".gif"
+            "image/jpeg", "jpg",
+            "image/png", "png",
+            "image/webp", "webp",
+            "image/gif", "gif"
     );
     private static final Set<String> ALLOWED_CONTENT_TYPES = EXTENSIONS_BY_CONTENT_TYPE.keySet();
 

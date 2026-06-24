@@ -2,6 +2,7 @@ package com.studyhub.aistudyhubbe.service;
 
 import com.studyhub.aistudyhubbe.dto.AdminDashboardMetricsResponse;
 import com.studyhub.aistudyhubbe.dto.AdminDocumentResponse;
+import com.studyhub.aistudyhubbe.dto.AdminUpdateUserRequest;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
 import com.studyhub.aistudyhubbe.config.CacheNames;
@@ -12,6 +13,8 @@ import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.entity.UserStatus;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
+import com.studyhub.aistudyhubbe.repository.DocumentChunkRepository;
+import com.studyhub.aistudyhubbe.repository.PasswordResetTokenRepository;
 import com.studyhub.aistudyhubbe.repository.RefreshTokenRepository;
 import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.ChatMessageRepository;
@@ -35,6 +38,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +54,10 @@ public class AdminService {
     private final SubjectRepository subjectRepository;
     private final ReportRepository reportRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final DocumentChunkRepository documentChunkRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final DocumentStorageService documentStorageService;
 
     public AdminService(
             UserRepository userRepository,
@@ -58,7 +66,11 @@ public class AdminService {
             DocumentRepository documentRepository,
             SubjectRepository subjectRepository,
             ReportRepository reportRepository,
-            ChatMessageRepository chatMessageRepository) {
+            ChatMessageRepository chatMessageRepository,
+            DocumentChunkRepository documentChunkRepository,
+            PasswordResetTokenRepository passwordResetTokenRepository,
+            PasswordEncoder passwordEncoder,
+            DocumentStorageService documentStorageService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.storageUsageService = storageUsageService;
@@ -66,6 +78,10 @@ public class AdminService {
         this.subjectRepository = subjectRepository;
         this.reportRepository = reportRepository;
         this.chatMessageRepository = chatMessageRepository;
+        this.documentChunkRepository = documentChunkRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.documentStorageService = documentStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -135,6 +151,31 @@ public class AdminService {
         return AdminDocumentResponse.from(documentRepository.save(document));
     }
 
+    @Transactional(readOnly = true)
+    public String getDocumentDownloadUrl(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getS3Key() == null || document.getS3Key().isBlank()) {
+            return document.getFileUrl();
+        }
+
+        return documentStorageService.createDownloadUrl(document.getS3Key(), document.getOriginalFilename());
+    }
+
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true)
+    })
+    public void deleteDocument(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        reportRepository.deleteByDocumentId(document.getId());
+        documentChunkRepository.deleteByDocumentId(document.getId());
+        documentRepository.delete(document);
+    }
+
     @Transactional
     @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
     public AdminUserResponse updateUserStatus(Long actorId, Long userId, UserStatus status) {
@@ -155,6 +196,50 @@ public class AdminService {
         }
 
         return AdminUserResponse.from(userRepository.save(user));
+    }
+
+    @Transactional
+    public AdminUserResponse updateUser(Long userId, AdminUpdateUserRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        user.setFullName(request.fullName().trim());
+        user.setPhone(request.phone() == null || request.phone().isBlank() ? null : request.phone().trim());
+
+        return AdminUserResponse.from(userRepository.save(user));
+    }
+
+    @Transactional
+    public AdminUserResponse resetPassword(Long userId, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+        refreshTokenRepository.revokeAllByUserId(user.getId());
+        passwordResetTokenRepository.invalidateAllByUserId(user.getId());
+
+        return AdminUserResponse.from(userRepository.save(user));
+    }
+
+    @Transactional
+    public void deleteUser(Long actorId, Long userId) {
+        if (actorId.equals(userId)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Admins cannot delete their own account");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        reportRepository.deleteByUserInvolvement(user.getId());
+        chatMessageRepository.deleteByUserId(user.getId());
+        documentChunkRepository.deleteByUserId(user.getId());
+        documentRepository.deleteByUserId(user.getId());
+        subjectRepository.deleteByUserId(user.getId());
+        refreshTokenRepository.deleteByUserId(user.getId());
+        passwordResetTokenRepository.deleteByUserId(user.getId());
+        userRepository.delete(user);
     }
 
     @Transactional(readOnly = true)

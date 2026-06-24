@@ -3,6 +3,8 @@ package com.studyhub.aistudyhubbe.controller;
 import com.studyhub.aistudyhubbe.dto.AdminDashboardMetricsResponse;
 import com.studyhub.aistudyhubbe.dto.AdminDocumentResponse;
 import com.studyhub.aistudyhubbe.dto.AdminDocumentStatusRequest;
+import com.studyhub.aistudyhubbe.dto.AdminResetPasswordRequest;
+import com.studyhub.aistudyhubbe.dto.AdminUpdateUserRequest;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.ApiResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
@@ -17,8 +19,12 @@ import com.studyhub.aistudyhubbe.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.Map;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -63,6 +69,31 @@ public class AdminController {
                 adminService.updateUserStatus(principal.getId(), userId, request.status()));
     }
 
+    @Operation(summary = "Update a user account info (name, phone)")
+    @PatchMapping("/users/{userId}")
+    public ApiResponse<AdminUserResponse> updateUser(
+            @PathVariable Long userId,
+            @Valid @RequestBody AdminUpdateUserRequest request) {
+        return ApiResponse.ok("User updated", adminService.updateUser(userId, request));
+    }
+
+    @Operation(summary = "Reset a user password")
+    @PatchMapping("/users/{userId}/password")
+    public ApiResponse<AdminUserResponse> resetPassword(
+            @PathVariable Long userId,
+            @Valid @RequestBody AdminResetPasswordRequest request) {
+        return ApiResponse.ok("Password reset", adminService.resetPassword(userId, request.newPassword()));
+    }
+
+    @Operation(summary = "Delete a user account and all related data")
+    @DeleteMapping("/users/{userId}")
+    public ApiResponse<Void> deleteUser(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long userId) {
+        adminService.deleteUser(principal.getId(), userId);
+        return ApiResponse.ok("User deleted", null);
+    }
+
     @Operation(summary = "Get admin dashboard metrics")
     @GetMapping("/dashboard/metrics")
     public ApiResponse<AdminDashboardMetricsResponse> dashboardMetrics() {
@@ -94,6 +125,22 @@ public class AdminController {
         return ApiResponse.ok(
                 "Document status updated",
                 adminService.updateDocumentStatus(documentId, request.status()));
+    }
+
+    @Operation(summary = "Download a document for admin")
+    @GetMapping("/documents/{documentId}/download")
+    public ResponseEntity<Void> downloadDocument(@PathVariable Long documentId) {
+        String url = adminService.getDocumentDownloadUrl(documentId);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .header(HttpHeaders.LOCATION, url)
+                .build();
+    }
+
+    @Operation(summary = "Delete a document for admin")
+    @DeleteMapping("/documents/{documentId}")
+    public ApiResponse<Void> deleteDocument(@PathVariable Long documentId) {
+        adminService.deleteDocument(documentId);
+        return ApiResponse.ok("Document deleted", null);
     }
 
     @Operation(summary = "List document reports for admin review")
