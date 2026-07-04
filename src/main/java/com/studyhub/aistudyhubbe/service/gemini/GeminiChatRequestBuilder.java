@@ -37,6 +37,7 @@ public class GeminiChatRequestBuilder {
                 %s
 
                 Answer the user question directly and thoughtfully. Use short paragraphs or bullets when helpful.
+                Keep the answer complete; do not stop mid-sentence. If the answer is long, prefer a concise complete summary.
                 If the document context is insufficient, say exactly what is missing instead of forcing an answer.
                 """.formatted(
                 prompt,
