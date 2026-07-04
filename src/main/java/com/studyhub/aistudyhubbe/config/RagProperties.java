@@ -11,7 +11,7 @@ public class RagProperties {
     private int topK = 4;
     private int maxChunksPerDocument = 48;
     private int maxContextChars = 12_000;
-    private String embeddingModel = "text-embedding-004";
+    private String embeddingModel = "gemini-embedding-001";
 
     public boolean isEnabled() {
         return enabled;

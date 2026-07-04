@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
@@ -19,14 +20,18 @@ import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 @Service
 @Profile("!test")
 public class AvatarStorageService {
 
     private static final long MAX_AVATAR_SIZE_BYTES = 5L * 1024L * 1024L;
+    private static final Duration PRESIGN_DURATION = Duration.ofDays(7);
     private static final String S3_AVATAR_PREFIX = "avatars/";
     private static final Map<String, String> EXTENSIONS_BY_CONTENT_TYPE = Map.of(
             "image/jpeg", "jpg",
@@ -37,14 +42,17 @@ public class AvatarStorageService {
     private static final Set<String> ALLOWED_CONTENT_TYPES = EXTENSIONS_BY_CONTENT_TYPE.keySet();
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
     private final String bucketName;
     private final String region;
 
     public AvatarStorageService(
             S3Client s3Client,
+            S3Presigner s3Presigner,
             @Value("${aws.s3.bucket}") String bucketName,
             @Value("${aws.region}") String region) {
         this.s3Client = s3Client;
+        this.s3Presigner = s3Presigner;
         this.bucketName = bucketName;
         this.region = region;
     }
@@ -74,6 +82,31 @@ public class AvatarStorageService {
                     .build());
         } catch (S3Exception | SdkClientException ignored) {
             // A stale avatar file should not block profile updates.
+        }
+    }
+
+    public String presignAvatarUrl(String avatarUrl) {
+        if (avatarUrl == null || avatarUrl.isBlank()) {
+            return avatarUrl;
+        }
+
+        String s3Key = resolveS3AvatarKey(avatarUrl);
+        if (s3Key == null) {
+            return avatarUrl;
+        }
+
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .build();
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(PRESIGN_DURATION)
+                    .getObjectRequest(getObjectRequest)
+                    .build();
+            return s3Presigner.presignGetObject(presignRequest).url().toExternalForm();
+        } catch (S3Exception | SdkClientException ex) {
+            return avatarUrl;
         }
     }
 

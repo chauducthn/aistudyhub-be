@@ -5,8 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.ai")
 public class AiProperties {
 
-    private String provider = "auto";
-    private boolean fallbackToLocal = true;
+    private String provider = "gemini";
     private Gemini gemini = new Gemini();
 
     public String getProvider() {
@@ -15,14 +14,6 @@ public class AiProperties {
 
     public void setProvider(String provider) {
         this.provider = provider;
-    }
-
-    public boolean isFallbackToLocal() {
-        return fallbackToLocal;
-    }
-
-    public void setFallbackToLocal(boolean fallbackToLocal) {
-        this.fallbackToLocal = fallbackToLocal;
     }
 
     public Gemini getGemini() {
@@ -39,8 +30,8 @@ public class AiProperties {
         private String baseUrl = "https://generativelanguage.googleapis.com/v1beta";
         private String model = "gemini-2.0-flash";
         private double temperature = 0.3;
-        private int maxOutputTokens = 1024;
-        private int timeoutSeconds = 30;
+        private int maxOutputTokens = 4096;
+        private int timeoutSeconds = 60;
 
         public String getApiKey() {
             return apiKey;

@@ -12,9 +12,11 @@ public class GeminiChatRequestBuilder {
     private static final String SYSTEM_INSTRUCTION = """
             You are AI Study Hub, an academic AI assistant.
             Answer clearly, accurately, and in the same language as the user's question unless the user asks otherwise.
-            Prefer the provided document context when it is available.
-            If the context is missing or insufficient, say what is missing and give a useful general study explanation.
-            Do not invent citations or claim that a document contains information that is not in the provided context.
+            When a document is selected, use the provided excerpts as grounding and reason from them to answer the user's specific question.
+            Do not summarize the whole document unless the user explicitly asks for a summary.
+            Do not repeat the excerpts verbatim. Synthesize, explain implications, and connect ideas when the context supports it.
+            If the excerpts are only representative background, infer cautiously and say when the document is insufficient.
+            Do not invent facts or claim that a document contains information that is not supported by the provided context.
             """;
 
     private final AiProperties aiProperties;
@@ -34,7 +36,9 @@ public class GeminiChatRequestBuilder {
                 Document context:
                 %s
 
-                Please provide a focused study answer. When helpful, include bullet points, definitions, examples, or quiz questions.
+                Answer the user question directly and thoughtfully. Use short paragraphs or bullets when helpful.
+                Keep the answer complete; do not stop mid-sentence. If the answer is long, prefer a concise complete summary.
+                If the document context is insufficient, say exactly what is missing instead of forcing an answer.
                 """.formatted(
                 prompt,
                 StringUtils.hasText(documentTitle) ? documentTitle : "No document selected",
