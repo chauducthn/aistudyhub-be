@@ -5,6 +5,7 @@ import com.studyhub.aistudyhubbe.dto.DocumentSubjectRequest;
 import com.studyhub.aistudyhubbe.dto.DocumentVisibilityRequest;
 import com.studyhub.aistudyhubbe.dto.DocumentResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
+import com.studyhub.aistudyhubbe.config.CacheNames;
 import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentExtractionStatus;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
@@ -15,6 +16,7 @@ import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
+import com.studyhub.aistudyhubbe.service.DocumentStorageService.DownloadedDocumentFile;
 import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
 import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
 import java.io.IOException;
@@ -24,6 +26,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Locale;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -63,6 +68,10 @@ public class DocumentService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+    })
     public DocumentResponse uploadDocument(
             Long userId,
             String title,
@@ -106,7 +115,7 @@ public class DocumentService {
                 status,
                 EXCLUDED_NORMAL_STATUSES,
                 pageable
-        ).map(DocumentResponse::from);
+        ).map(document -> DocumentResponse.fromOwnedDocument(document, userId));
 
         return PageResponse.from(documents);
     }
@@ -123,6 +132,10 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(
+            value = CacheNames.PUBLIC_DOCUMENTS,
+            key = "T(String).valueOf(#keyword == null ? '' : #keyword)"
+                    + " + '|' + #pageable.pageNumber + '|' + #pageable.pageSize + '|' + #pageable.sort")
     public PageResponse<DocumentResponse> listPublicDocuments(String keyword, Pageable pageable) {
         Page<DocumentResponse> documents = documentRepository.searchPublicDocuments(
                 normalizeKeyword(keyword),
@@ -142,6 +155,10 @@ public class DocumentService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+    })
     public DocumentResponse updateDocument(Long userId, Long documentId, DocumentUpdateRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
 
@@ -161,6 +178,10 @@ public class DocumentService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+    })
     public DocumentResponse updateDocumentSubject(Long userId, Long documentId, DocumentSubjectRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
         document.setSubject(findOwnedSubject(userId, request.subjectId()));
@@ -168,6 +189,10 @@ public class DocumentService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+    })
     public DocumentResponse updateVisibility(Long userId, Long documentId, DocumentVisibilityRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
         DocumentStatus status = request.status();
@@ -181,7 +206,7 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
-    public String getDocumentDownloadUrl(Long userId, Long documentId) {
+    public DocumentDownloadFile getDocumentDownloadFile(Long userId, Long documentId) {
         Document document = documentRepository.findDownloadableById(
                         documentId,
                         userId,
@@ -189,14 +214,26 @@ public class DocumentService {
                         EXCLUDED_NORMAL_STATUSES)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
 
-        if (document.getS3Key() == null || document.getS3Key().isBlank()) {
-            return document.getFileUrl();
-        }
+        String storageKey = document.getS3Key() == null || document.getS3Key().isBlank()
+                ? document.getFileUrl()
+                : document.getS3Key();
+        DownloadedDocumentFile file = documentStorageService.downloadDocumentFile(storageKey);
+        String contentType = file.contentType() == null || file.contentType().isBlank()
+                ? document.getContentType()
+                : file.contentType();
 
-        return documentStorageService.createDownloadUrl(document.getS3Key(), document.getOriginalFilename());
+        return new DocumentDownloadFile(
+                file.bytes(),
+                document.getOriginalFilename(),
+                contentType,
+                file.contentLength());
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+    })
     public void deleteDocument(Long userId, Long documentId) {
         Document document = findOwnedVisibleDocument(userId, documentId);
         document.setStatus(DocumentStatus.DELETED);
@@ -282,4 +319,10 @@ public class DocumentService {
         }
     }
 
+    public record DocumentDownloadFile(
+            byte[] bytes,
+            String originalFilename,
+            String contentType,
+            long contentLength
+    ) {}
 }

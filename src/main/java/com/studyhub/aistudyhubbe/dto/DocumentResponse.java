@@ -48,4 +48,27 @@ public record DocumentResponse(
                 document.getUpdatedAt()
         );
     }
+
+    public static DocumentResponse fromOwnedDocument(Document document, Long ownerUserId) {
+        return new DocumentResponse(
+                document.getId(),
+                ownerUserId,
+                document.getSubject() == null ? null : document.getSubject().getId(),
+                document.getSubject() == null ? null : document.getSubject().getName(),
+                document.getTitle(),
+                document.getDescription(),
+                document.getFileType(),
+                document.getContentType(),
+                document.getFileSize(),
+                document.getS3Key(),
+                document.getFileUrl(),
+                document.getOriginalFilename(),
+                document.getStatus(),
+                document.getExtractionStatus(),
+                document.getExtractionError(),
+                document.getExtractedAt(),
+                document.getCreatedAt(),
+                document.getUpdatedAt()
+        );
+    }
 }

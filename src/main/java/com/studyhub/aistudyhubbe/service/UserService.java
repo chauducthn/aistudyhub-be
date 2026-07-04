@@ -29,14 +29,14 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserResponse getCurrentUser(Long userId) {
-        return UserResponse.from(findUser(userId));
+        return toResponse(findUser(userId));
     }
 
     @Transactional
     public UserResponse updateProfile(Long userId, UpdateProfileRequest request) {
         User user = findUser(userId);
         user.setFullName(request.fullName().trim());
-        return UserResponse.from(userRepository.save(user));
+        return toResponse(userRepository.save(user));
     }
 
     @Transactional
@@ -44,7 +44,7 @@ public class UserService {
         User user = findUser(userId);
         String avatarUrl = avatarStorageService.storeAvatar(user.getId(), avatar, user.getAvatarUrl());
         user.setAvatarUrl(avatarUrl);
-        return UserResponse.from(userRepository.save(user));
+        return toResponse(userRepository.save(user));
     }
 
     @Transactional
@@ -52,7 +52,21 @@ public class UserService {
         User user = findUser(userId);
         avatarStorageService.deleteAvatar(user.getAvatarUrl());
         user.setAvatarUrl(null);
-        return UserResponse.from(userRepository.save(user));
+        return toResponse(userRepository.save(user));
+    }
+
+    private UserResponse toResponse(User user) {
+        UserResponse response = UserResponse.from(user);
+        if (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank()) {
+            return response;
+        }
+        return new UserResponse(
+                response.id(),
+                response.email(),
+                response.fullName(),
+                avatarStorageService.presignAvatarUrl(user.getAvatarUrl()),
+                response.role(),
+                response.status());
     }
 
     @Transactional

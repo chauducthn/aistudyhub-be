@@ -23,7 +23,9 @@ import java.time.Instant;
                 @Index(name = "idx_documents_user_id", columnList = "user_id"),
                 @Index(name = "idx_documents_subject_id", columnList = "subject_id"),
                 @Index(name = "idx_documents_status", columnList = "status"),
-                @Index(name = "idx_documents_created_at", columnList = "created_at")
+                @Index(name = "idx_documents_created_at", columnList = "created_at"),
+                @Index(name = "idx_documents_user_status", columnList = "user_id, status"),
+                @Index(name = "idx_documents_status_created_at", columnList = "status, created_at")
         })
 public class Document {
 

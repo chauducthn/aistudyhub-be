@@ -2,6 +2,7 @@ package com.studyhub.aistudyhubbe.service;
 
 import com.studyhub.aistudyhubbe.dto.SubjectRequest;
 import com.studyhub.aistudyhubbe.dto.SubjectResponse;
+import com.studyhub.aistudyhubbe.config.CacheNames;
 import com.studyhub.aistudyhubbe.entity.Subject;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.exception.ApiException;
@@ -9,6 +10,8 @@ import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import java.util.List;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +33,7 @@ public class SubjectService {
     }
 
     @Transactional
+    @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     public SubjectResponse createSubject(Long userId, SubjectRequest request) {
         String name = normalizeName(request.name());
         ensureUniqueName(userId, name);
@@ -42,6 +46,7 @@ public class SubjectService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheNames.USER_SUBJECTS, key = "#userId")
     public List<SubjectResponse> listSubjects(Long userId) {
         return subjectRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(SubjectResponse::from)
@@ -49,6 +54,7 @@ public class SubjectService {
     }
 
     @Transactional
+    @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     public SubjectResponse updateSubject(Long userId, Long subjectId, SubjectRequest request) {
         Subject subject = findOwnedSubject(userId, subjectId);
         String name = normalizeName(request.name());
@@ -63,6 +69,7 @@ public class SubjectService {
     }
 
     @Transactional
+    @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     public void deleteSubject(Long userId, Long subjectId) {
         Subject subject = findOwnedSubject(userId, subjectId);
         if (documentRepository.countBySubjectId(subject.getId()) > 0) {

@@ -16,7 +16,8 @@ import java.time.Instant;
 @Table(
         name = "document_chunks",
         indexes = {
-                @Index(name = "idx_document_chunks_document_id", columnList = "document_id")
+                @Index(name = "idx_document_chunks_document_id", columnList = "document_id"),
+                @Index(name = "idx_document_chunks_document_chunk", columnList = "document_id, chunk_index")
         })
 public class DocumentChunk {
 

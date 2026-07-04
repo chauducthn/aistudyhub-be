@@ -19,7 +19,8 @@ import java.time.Instant;
         indexes = {
                 @Index(name = "idx_chat_messages_user_id", columnList = "user_id"),
                 @Index(name = "idx_chat_messages_document_id", columnList = "document_id"),
-                @Index(name = "idx_chat_messages_created_at", columnList = "created_at")
+                @Index(name = "idx_chat_messages_created_at", columnList = "created_at"),
+                @Index(name = "idx_chat_messages_user_visible_created", columnList = "user_id, visible_to_user, created_at")
         })
 public class ChatMessage {
 

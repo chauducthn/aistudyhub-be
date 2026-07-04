@@ -3,18 +3,23 @@ package com.studyhub.aistudyhubbe.service;
 import com.studyhub.aistudyhubbe.dto.AdminDashboardMetricsResponse;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
-import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.entity.UserStatus;
 import com.studyhub.aistudyhubbe.repository.ChatMessageRepository;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
+import com.studyhub.aistudyhubbe.repository.projection.DocumentStatusCount;
+import com.studyhub.aistudyhubbe.repository.projection.ReportStatusCount;
+import java.sql.Date;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -78,10 +83,9 @@ public class AdminMetricsService {
         EnumMap<UserStatus, Long> userCounts =
                 mapCounts(UserStatus.class, userRepository.countGroupedByStatus());
         EnumMap<DocumentStatus, Long> documentCounts =
-                mapCounts(DocumentStatus.class, documentRepository.countGroupedByStatus());
+                mapDocumentCounts(documentRepository.countGroupedByStatus());
         EnumMap<ReportStatus, Long> reportCounts =
-                mapCounts(ReportStatus.class, reportRepository.countGroupedByStatus());
-        List<User> recentUsers = userRepository.findByCreatedAtAfter(startInstant);
+                mapReportCounts(reportRepository.countGroupedByStatus());
 
         long usedBytes = storageUsageService.calculateUsedBytes();
         double usedGb = round2(usedBytes / BYTES_PER_GB);
@@ -91,7 +95,7 @@ public class AdminMetricsService {
                 total(userCounts),
                 count(userCounts, UserStatus.ACTIVE),
                 count(userCounts, UserStatus.LOCKED),
-                countRecentUsers(recentUsers, sevenDaysAgo),
+                userRepository.countByCreatedAtAfter(sevenDaysAgo),
                 chatMessageRepository.count(),
                 buildDocumentMetrics(documentCounts),
                 new AdminDashboardMetricsResponse.SubjectMetrics(subjectRepository.count()),
@@ -103,7 +107,7 @@ public class AdminMetricsService {
                         percentUsed,
                         usedGb > StorageUsageService.STORAGE_LIMIT_GB
                 ),
-                buildUserGrowth(recentUsers, startDate, zoneId)
+                buildUserGrowth(startDate, startInstant)
         );
     }
 
@@ -137,19 +141,19 @@ public class AdminMetricsService {
     }
 
     private List<AdminDashboardMetricsResponse.DailyUserMetric> buildUserGrowth(
-            List<User> recentUsers,
             LocalDate startDate,
-            ZoneId zoneId) {
-        return java.util.stream.IntStream.rangeClosed(0, 6)
+            Instant startInstant) {
+        Map<LocalDate, Long> dailyCounts = userRepository.countDailyRegistrations(startInstant).stream()
+                .collect(Collectors.toMap(
+                        row -> toLocalDate(row[0]),
+                        row -> ((Number) row[1]).longValue(),
+                        Long::sum));
+
+        return IntStream.rangeClosed(0, 6)
                 .mapToObj(startDate::plusDays)
                 .map(date -> new AdminDashboardMetricsResponse.DailyUserMetric(
                         date,
-                        recentUsers.stream()
-                                .map(User::getCreatedAt)
-                                .filter(createdAt -> createdAt != null)
-                                .map(createdAt -> createdAt.atZone(zoneId).toLocalDate())
-                                .filter(date::equals)
-                                .count()))
+                        dailyCounts.getOrDefault(date, 0L)))
                 .toList();
     }
 
@@ -163,6 +167,22 @@ public class AdminMetricsService {
         return counts;
     }
 
+    private EnumMap<DocumentStatus, Long> mapDocumentCounts(List<DocumentStatusCount> rows) {
+        EnumMap<DocumentStatus, Long> counts = new EnumMap<>(DocumentStatus.class);
+        for (DocumentStatusCount row : rows) {
+            counts.put(row.getStatus(), row.getTotal());
+        }
+        return counts;
+    }
+
+    private EnumMap<ReportStatus, Long> mapReportCounts(List<ReportStatusCount> rows) {
+        EnumMap<ReportStatus, Long> counts = new EnumMap<>(ReportStatus.class);
+        for (ReportStatusCount row : rows) {
+            counts.put(row.getStatus(), row.getTotal());
+        }
+        return counts;
+    }
+
     private <E extends Enum<E>> long count(EnumMap<E, Long> counts, E key) {
         return counts.getOrDefault(key, 0L);
     }
@@ -171,11 +191,14 @@ public class AdminMetricsService {
         return counts.values().stream().mapToLong(Long::longValue).sum();
     }
 
-    private long countRecentUsers(List<User> recentUsers, Instant sevenDaysAgo) {
-        return recentUsers.stream()
-                .map(User::getCreatedAt)
-                .filter(createdAt -> createdAt != null && createdAt.isAfter(sevenDaysAgo))
-                .count();
+    private LocalDate toLocalDate(Object value) {
+        if (value instanceof Date sqlDate) {
+            return sqlDate.toLocalDate();
+        }
+        if (value instanceof LocalDate localDate) {
+            return localDate;
+        }
+        throw new IllegalStateException("Unexpected date type: " + value.getClass().getName());
     }
 
     private double round2(double value) {

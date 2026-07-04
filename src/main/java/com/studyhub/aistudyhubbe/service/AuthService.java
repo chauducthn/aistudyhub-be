@@ -43,6 +43,7 @@ public class AuthService {
     private final JwtProperties jwtProperties;
     private final AuthProperties authProperties;
     private final EmailService emailService;
+    private final AvatarStorageService avatarStorageService;
 
     public AuthService(
             UserRepository userRepository,
@@ -52,7 +53,8 @@ public class AuthService {
             JwtService jwtService,
             JwtProperties jwtProperties,
             AuthProperties authProperties,
-            EmailService emailService) {
+            EmailService emailService,
+            AvatarStorageService avatarStorageService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -61,6 +63,7 @@ public class AuthService {
         this.jwtProperties = jwtProperties;
         this.authProperties = authProperties;
         this.emailService = emailService;
+        this.avatarStorageService = avatarStorageService;
     }
 
     @Transactional
@@ -209,11 +212,21 @@ public class AuthService {
 
     private AuthResponse buildAuthResponse(User user) {
         String accessToken = jwtService.generateAccessToken(user);
+        UserResponse userResponse = UserResponse.from(user);
+        if (user.getAvatarUrl() != null && !user.getAvatarUrl().isBlank()) {
+            userResponse = new UserResponse(
+                    userResponse.id(),
+                    userResponse.email(),
+                    userResponse.fullName(),
+                    avatarStorageService.presignAvatarUrl(user.getAvatarUrl()),
+                    userResponse.role(),
+                    userResponse.status());
+        }
         return new AuthResponse(
                 accessToken,
                 "Bearer",
                 jwtService.getAccessExpirationSeconds(),
-                UserResponse.from(user)
+                userResponse
         );
     }
 

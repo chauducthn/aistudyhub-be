@@ -2,6 +2,7 @@ package com.studyhub.aistudyhubbe.repository;
 
 import com.studyhub.aistudyhubbe.entity.Report;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
+import com.studyhub.aistudyhubbe.repository.projection.ReportStatusCount;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -50,8 +51,16 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             Long reporterId,
             ReportStatus status);
 
+    @Modifying
+    @Query("delete from Report r where r.document.id = :documentId")
+    void deleteByDocumentId(@Param("documentId") Long documentId);
+
     long countByStatus(ReportStatus status);
 
-    @Query("select r.status, count(r) from Report r group by r.status")
-    List<Object[]> countGroupedByStatus();
+    @Query("""
+            select r.status as status, count(r) as total
+            from Report r
+            group by r.status
+            """)
+    List<ReportStatusCount> countGroupedByStatus();
 }

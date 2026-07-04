@@ -186,10 +186,9 @@ class DocumentControllerIntegrationTest {
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + otherToken))
-                .andExpect(status().isFound())
-                .andExpect(header().string(
-                        HttpHeaders.LOCATION,
-                        org.hamcrest.Matchers.startsWith("/uploads/documents/")));
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(content().string("downloadable content"));
 
         mockMvc.perform(delete("/api/documents/" + documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + ownerToken))
@@ -227,14 +226,15 @@ class DocumentControllerIntegrationTest {
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isFound())
-                .andExpect(header().string(
-                        HttpHeaders.LOCATION,
-                        org.hamcrest.Matchers.startsWith("/uploads/documents/")));
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_PLAIN))
+                .andExpect(content().string("secure content"));
 
-        mockMvc.perform(get(fileUrl)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get(fileUrl))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/documents/" + documentId + "/download"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

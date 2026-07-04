@@ -10,6 +10,7 @@ import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.security.UserPrincipal;
 import com.studyhub.aistudyhubbe.service.DocumentService;
+import com.studyhub.aistudyhubbe.service.DocumentService.DocumentDownloadFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -17,6 +18,8 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -149,13 +152,19 @@ public class DocumentController {
 
     @Operation(summary = "Download a public document or the current user's private document")
     @GetMapping("/{id}/download")
-    public ResponseEntity<Void> downloadDocument(
+    public ResponseEntity<ByteArrayResource> downloadDocument(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long id) {
-        String url = documentService.getDocumentDownloadUrl(requireUserId(principal), id);
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .header(HttpHeaders.LOCATION, url)
+        DocumentDownloadFile file = documentService.getDocumentDownloadFile(requireUserId(principal), id);
+        ContentDisposition contentDisposition = ContentDisposition.inline()
+                .filename(safeFilename(file.originalFilename()), StandardCharsets.UTF_8)
                 .build();
+
+        return ResponseEntity.ok()
+                .contentType(resolveMediaType(file.contentType()))
+                .contentLength(file.contentLength())
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                .body(new ByteArrayResource(file.bytes()));
     }
 
     @Operation(summary = "Soft delete current user's document")
@@ -172,5 +181,20 @@ public class DocumentController {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Authentication required");
         }
         return principal.getId();
+    }
+
+    private MediaType resolveMediaType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (IllegalArgumentException ex) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private String safeFilename(String filename) {
+        return filename == null || filename.isBlank() ? "document" : filename.replace("\"", "");
     }
 }

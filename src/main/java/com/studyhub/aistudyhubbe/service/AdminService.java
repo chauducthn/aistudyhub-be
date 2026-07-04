@@ -4,6 +4,7 @@ import com.studyhub.aistudyhubbe.dto.AdminDocumentResponse;
 import com.studyhub.aistudyhubbe.dto.AdminUpdateUserRequest;
 import com.studyhub.aistudyhubbe.dto.AdminUserResponse;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
+import com.studyhub.aistudyhubbe.config.CacheNames;
 import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.User;
@@ -17,6 +18,8 @@ import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.ChatMessageRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +41,7 @@ public class AdminService {
     private final DocumentChunkRepository documentChunkRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
+    private final DocumentStorageService documentStorageService;
 
     public AdminService(
             UserRepository userRepository,
@@ -48,7 +52,8 @@ public class AdminService {
             ChatMessageRepository chatMessageRepository,
             DocumentChunkRepository documentChunkRepository,
             PasswordResetTokenRepository passwordResetTokenRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            DocumentStorageService documentStorageService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.documentRepository = documentRepository;
@@ -58,6 +63,7 @@ public class AdminService {
         this.documentChunkRepository = documentChunkRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
+        this.documentStorageService = documentStorageService;
     }
 
     @Transactional(readOnly = true)
@@ -100,6 +106,10 @@ public class AdminService {
     }
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true)
+    })
     public AdminDocumentResponse updateDocumentStatus(Long documentId, DocumentStatus status) {
         if (!isAdminDocumentStatus(status)) {
             throw new ApiException(
@@ -113,7 +123,33 @@ public class AdminService {
         return AdminDocumentResponse.from(documentRepository.save(document));
     }
 
+    @Transactional(readOnly = true)
+    public String getDocumentDownloadUrl(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getS3Key() == null || document.getS3Key().isBlank()) {
+            return document.getFileUrl();
+        }
+
+        return documentStorageService.createDownloadUrl(document.getS3Key(), document.getOriginalFilename());
+    }
+
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true)
+    })
+    public void deleteDocument(Long documentId) {
+        Document document = documentRepository.findAdminDetailById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        reportRepository.deleteByDocumentId(document.getId());
+        documentChunkRepository.deleteByDocumentId(document.getId());
+        documentRepository.delete(document);
+    }
+
+    @Transactional
+    @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
     public AdminUserResponse updateUserStatus(Long actorId, Long userId, UserStatus status) {
         rejectSelfAction(actorId, userId, "Admins cannot change their own account status");
         User user = getUserOrThrow(userId);
