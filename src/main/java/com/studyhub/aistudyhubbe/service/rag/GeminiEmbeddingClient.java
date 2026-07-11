@@ -4,6 +4,7 @@ import com.studyhub.aistudyhubbe.config.AiProperties;
 import com.studyhub.aistudyhubbe.config.RagProperties;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,9 @@ import org.springframework.web.client.RestClientResponseException;
 
 @Service
 public class GeminiEmbeddingClient {
+
+    private static final String RETRIEVAL_DOCUMENT = "RETRIEVAL_DOCUMENT";
+    private static final String QUESTION_ANSWERING = "QUESTION_ANSWERING";
 
     private final AiProperties aiProperties;
     private final RagProperties ragProperties;
@@ -30,6 +34,18 @@ public class GeminiEmbeddingClient {
     }
 
     public float[] embed(String text) {
+        return embed(text, null);
+    }
+
+    public float[] embedDocument(String text) {
+        return embed(text, RETRIEVAL_DOCUMENT);
+    }
+
+    public float[] embedQuestion(String text) {
+        return embed(text, QUESTION_ANSWERING);
+    }
+
+    private float[] embed(String text, String taskType) {
         if (!isConfigured()) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
         }
@@ -42,7 +58,7 @@ public class GeminiEmbeddingClient {
                     .post()
                     .uri("/%s:embedContent".formatted(modelPath()))
                     .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
-                    .body(Map.of("content", Map.of("parts", List.of(Map.of("text", text.trim())))))
+                    .body(buildRequestBody(text.trim(), taskType))
                     .retrieve()
                     .body(EmbedResponse.class);
 
@@ -55,6 +71,19 @@ public class GeminiEmbeddingClient {
         } catch (RestClientException ex) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "Gemini embedding failed: " + shorten(ex.getMessage()));
         }
+    }
+
+    private Map<String, Object> buildRequestBody(String text, String taskType) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (supportsTaskType() && StringUtils.hasText(taskType)) {
+            body.put("taskType", taskType);
+        }
+        body.put("content", Map.of("parts", List.of(Map.of("text", text))));
+        return body;
+    }
+
+    private boolean supportsTaskType() {
+        return "gemini-embedding-001".equals(ragProperties.getEmbeddingModel());
     }
 
     private RestClient restClient() {

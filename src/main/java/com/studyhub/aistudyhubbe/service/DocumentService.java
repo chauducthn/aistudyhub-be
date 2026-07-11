@@ -12,6 +12,7 @@ import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.Subject;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.exception.ApiException;
+import java.time.Instant;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
@@ -51,6 +52,7 @@ public class DocumentService {
     private final DocumentStorageService documentStorageService;
     private final DocumentTextExtractionService documentTextExtractionService;
     private final DocumentChunkIndexer documentChunkIndexer;
+    private final ChatbotAiResponder chatbotAiResponder;
 
     public DocumentService(
             DocumentRepository documentRepository,
@@ -58,13 +60,15 @@ public class DocumentService {
             SubjectRepository subjectRepository,
             DocumentStorageService documentStorageService,
             DocumentTextExtractionService documentTextExtractionService,
-            DocumentChunkIndexer documentChunkIndexer) {
+            DocumentChunkIndexer documentChunkIndexer,
+            ChatbotAiResponder chatbotAiResponder) {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
         this.documentStorageService = documentStorageService;
         this.documentTextExtractionService = documentTextExtractionService;
         this.documentChunkIndexer = documentChunkIndexer;
+        this.chatbotAiResponder = chatbotAiResponder;
     }
 
     @Transactional
@@ -99,6 +103,61 @@ public class DocumentService {
         Document saved = documentRepository.save(document);
         documentChunkIndexer.indexDocument(saved);
         return DocumentResponse.from(saved);
+    }
+
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+    })
+    public List<DocumentResponse> uploadDocuments(
+            Long userId,
+            String title,
+            String description,
+            Long subjectId,
+            List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "At least one file is required");
+        }
+
+        User user = findUser(userId);
+        Subject subject = findOwnedSubject(userId, subjectId);
+        List<DocumentResponse> responses = new java.util.ArrayList<>();
+
+        for (MultipartFile file : files) {
+            String fileTitle = title;
+            if (fileTitle == null || fileTitle.trim().isBlank()) {
+                String originalFilename = file.getOriginalFilename();
+                if (originalFilename != null) {
+                    int lastDot = originalFilename.lastIndexOf('.');
+                    fileTitle = lastDot > 0 ? originalFilename.substring(0, lastDot) : originalFilename;
+                } else {
+                    fileTitle = "Untitled Document";
+                }
+            }
+
+            StoredDocumentFile storedFile = documentStorageService.storeDocument(userId, file);
+
+            Document document = new Document();
+            document.setUser(user);
+            document.setSubject(subject);
+            document.setTitle(normalizeTitle(fileTitle));
+            document.setDescription(normalizeDescription(description));
+            document.setFileType(storedFile.fileType());
+            document.setContentType(storedFile.contentType());
+            document.setFileSize(storedFile.fileSize());
+            document.setS3Key(storedFile.s3Key());
+            document.setFileUrl(storedFile.fileUrl());
+            document.setOriginalFilename(storedFile.originalFilename());
+            document.setStatus(DocumentStatus.PRIVATE);
+            applyExtractionResult(document, storedFile, file);
+
+            Document saved = documentRepository.save(document);
+            documentChunkIndexer.indexDocument(saved);
+            responses.add(DocumentResponse.from(saved));
+        }
+
+        return responses;
     }
 
     @Transactional(readOnly = true)
@@ -317,6 +376,42 @@ public class DocumentService {
                 } catch (IOException ignored) {}
             }
         }
+    }
+
+    @Transactional
+    public DocumentResponse checkPlagiarism(Long userId, Long documentId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (!document.getUser().getId().equals(userId) && document.getStatus() != DocumentStatus.PUBLIC) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to access this document");
+        }
+
+        String text = document.getExtractedText();
+        if (text == null || text.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Document text is not extracted. Cannot perform plagiarism check.");
+        }
+
+        String sampleText = text.substring(0, Math.min(text.length(), 6000));
+        String prompt = """
+                Analyze the following document for potential plagiarism by comparing it with your training data and public knowledge on the Internet.
+                Identify:
+                1. Plagiarism Score (0-100%).
+                2. Potential source links or publications names that match closely.
+                3. Specific sentences or paragraphs that appear to be copied or paraphrased from external sources.
+                4. An overall analysis of the document's originality and integrity.
+
+                Output the report as structured, clean Markdown. Do not repeat this instruction.
+
+                Document Content:
+                %s
+                """.formatted(sampleText);
+
+        ChatbotAiResponder.StudyAiResponse reportResponse = chatbotAiResponder.generate(prompt, null);
+        document.setPlagiarismReport(reportResponse.response());
+        document.setPlagiarismCheckedAt(Instant.now());
+
+        return DocumentResponse.from(documentRepository.save(document));
     }
 
     public record DocumentDownloadFile(

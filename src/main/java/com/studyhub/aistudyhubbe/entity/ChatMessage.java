@@ -36,6 +36,10 @@ public class ChatMessage {
     @JoinColumn(name = "document_id")
     private Document document;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chat_session_id")
+    private ChatSession chatSession;
+
     @Column(nullable = false, length = 4000)
     private String prompt;
 
@@ -118,5 +122,13 @@ public class ChatMessage {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public ChatSession getChatSession() {
+        return chatSession;
+    }
+
+    public void setChatSession(ChatSession chatSession) {
+        this.chatSession = chatSession;
     }
 }

@@ -15,6 +15,7 @@ public record AdminUserResponse(
         UserStatus status,
         int failedLoginAttempts,
         Instant lockedUntil,
+        boolean passwordResetRequired,
         Instant createdAt
 ) {
 
@@ -29,6 +30,7 @@ public record AdminUserResponse(
                 user.getStatus(),
                 user.getFailedLoginAttempts(),
                 user.getLockedUntil(),
+                user.isPasswordResetRequired(),
                 user.getCreatedAt()
         );
     }

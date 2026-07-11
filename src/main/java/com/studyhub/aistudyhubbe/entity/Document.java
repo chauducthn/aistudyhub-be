@@ -82,6 +82,12 @@ public class Document {
     @Column(name = "extracted_at")
     private Instant extractedAt;
 
+    @Column(name = "plagiarism_report", columnDefinition = "LONGTEXT")
+    private String plagiarismReport;
+
+    @Column(name = "plagiarism_checked_at")
+    private Instant plagiarismCheckedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -242,5 +248,21 @@ public class Document {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getPlagiarismReport() {
+        return plagiarismReport;
+    }
+
+    public void setPlagiarismReport(String plagiarismReport) {
+        this.plagiarismReport = plagiarismReport;
+    }
+
+    public Instant getPlagiarismCheckedAt() {
+        return plagiarismCheckedAt;
+    }
+
+    public void setPlagiarismCheckedAt(Instant plagiarismCheckedAt) {
+        this.plagiarismCheckedAt = plagiarismCheckedAt;
     }
 }

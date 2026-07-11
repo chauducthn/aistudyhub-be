@@ -14,6 +14,7 @@ import com.studyhub.aistudyhubbe.dto.UpdateUserStatusRequest;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
 import com.studyhub.aistudyhubbe.security.UserPrincipal;
+import com.studyhub.aistudyhubbe.service.AdminMetricsService;
 import com.studyhub.aistudyhubbe.service.AdminService;
 import com.studyhub.aistudyhubbe.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,10 +38,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
 
     private final AdminService adminService;
+    private final AdminMetricsService adminMetricsService;
     private final ReportService reportService;
 
-    public AdminController(AdminService adminService, ReportService reportService) {
+    public AdminController(
+            AdminService adminService,
+            AdminMetricsService adminMetricsService,
+            ReportService reportService) {
         this.adminService = adminService;
+        this.adminMetricsService = adminMetricsService;
         this.reportService = reportService;
     }
 
@@ -81,8 +87,8 @@ public class AdminController {
     @PatchMapping("/users/{userId}/password")
     public ApiResponse<AdminUserResponse> resetPassword(
             @PathVariable Long userId,
-            @Valid @RequestBody AdminResetPasswordRequest request) {
-        return ApiResponse.ok("Password reset", adminService.resetPassword(userId, request.newPassword()));
+            @RequestBody(required = false) AdminResetPasswordRequest request) {
+        return ApiResponse.ok("Password reset", adminService.resetPassword(userId, null));
     }
 
     @Operation(summary = "Delete a user account and all related data")
@@ -97,7 +103,7 @@ public class AdminController {
     @Operation(summary = "Get admin dashboard metrics")
     @GetMapping("/dashboard/metrics")
     public ApiResponse<AdminDashboardMetricsResponse> dashboardMetrics() {
-        return ApiResponse.ok(adminService.getDashboardMetrics());
+        return ApiResponse.ok(adminMetricsService.getDashboardMetrics());
     }
 
     @Operation(summary = "List all documents for admin moderation")
@@ -146,10 +152,11 @@ public class AdminController {
     @Operation(summary = "List document reports for admin review")
     @GetMapping("/reports")
     public ApiResponse<PageResponse<ReportResponse>> listReports(
-            @RequestParam(required = false) ReportStatus status,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.ok(reportService.listReports(status, page, size));
+        return ApiResponse.ok(reportService.listReports(status, keyword, page, size));
     }
 
     @Operation(summary = "Get a document report detail for admin review")

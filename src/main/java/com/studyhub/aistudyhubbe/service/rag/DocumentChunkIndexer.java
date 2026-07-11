@@ -52,7 +52,7 @@ public class DocumentChunkIndexer {
             chunk.setContent(chunks.get(i));
             if (canEmbed) {
                 try {
-                    chunk.setEmbedding(chunkEmbeddingCodec.encode(geminiEmbeddingClient.embed(chunks.get(i))));
+                    chunk.setEmbedding(chunkEmbeddingCodec.encode(geminiEmbeddingClient.embedDocument(chunks.get(i))));
                 } catch (RuntimeException ex) {
                     LOGGER.warn("Skipping embedding for document {} chunk {}: {}", document.getId(), i, ex.getMessage());
                 }

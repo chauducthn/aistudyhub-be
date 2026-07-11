@@ -26,12 +26,62 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
                     join fetch r.document d
                     join fetch r.reporter reporter
                     where (:status is null or r.status = :status)
+                      and (
+                          :keyword is null or :keyword = ''
+                          or lower(d.title) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.email) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.fullName) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(r.description, '')) like lower(concat('%', :keyword, '%'))
+                      )
                     """,
             countQuery = """
                     select count(r) from Report r
+                    join r.document d
+                    join r.reporter reporter
                     where (:status is null or r.status = :status)
+                      and (
+                          :keyword is null or :keyword = ''
+                          or lower(d.title) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.email) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.fullName) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(r.description, '')) like lower(concat('%', :keyword, '%'))
+                      )
                     """)
-    Page<Report> searchReports(@Param("status") ReportStatus status, Pageable pageable);
+    Page<Report> searchReports(
+            @Param("status") ReportStatus status,
+            @Param("keyword") String keyword,
+            Pageable pageable);
+
+    @Query(
+            value = """
+                    select r from Report r
+                    join fetch r.document d
+                    join fetch r.reporter reporter
+                    where r.status in (com.studyhub.aistudyhubbe.entity.ReportStatus.RESOLVED, com.studyhub.aistudyhubbe.entity.ReportStatus.REJECTED)
+                      and (
+                          :keyword is null or :keyword = ''
+                          or lower(d.title) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.email) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.fullName) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(r.description, '')) like lower(concat('%', :keyword, '%'))
+                      )
+                    """,
+            countQuery = """
+                    select count(r) from Report r
+                    join r.document d
+                    join r.reporter reporter
+                    where r.status in (com.studyhub.aistudyhubbe.entity.ReportStatus.RESOLVED, com.studyhub.aistudyhubbe.entity.ReportStatus.REJECTED)
+                      and (
+                          :keyword is null or :keyword = ''
+                          or lower(d.title) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.email) like lower(concat('%', :keyword, '%'))
+                          or lower(reporter.fullName) like lower(concat('%', :keyword, '%'))
+                          or lower(coalesce(r.description, '')) like lower(concat('%', :keyword, '%'))
+                      )
+                    """)
+    Page<Report> findProcessedReports(
+            @Param("keyword") String keyword,
+            Pageable pageable);
 
     @Query("""
             select r from Report r

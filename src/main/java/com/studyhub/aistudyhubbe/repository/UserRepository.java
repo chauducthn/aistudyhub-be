@@ -24,6 +24,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     long countByStatus(UserStatus status);
 
+    @Query("select u.status, count(u) from User u group by u.status")
+    List<Object[]> countGroupedByStatus();
+
     long countByCreatedAtAfter(Instant createdAt);
 
     List<User> findByCreatedAtAfter(Instant createdAt);

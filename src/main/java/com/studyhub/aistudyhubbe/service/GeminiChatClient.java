@@ -6,6 +6,10 @@ import com.studyhub.aistudyhubbe.service.gemini.GeminiChatRequestBuilder;
 import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser;
 import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser.GeminiGenerateResponse;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -16,6 +20,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 @Service
 public class GeminiChatClient {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GeminiChatClient.class);
 
     private final AiProperties aiProperties;
     private final GeminiChatRequestBuilder requestBuilder;
@@ -43,10 +49,36 @@ public class GeminiChatClient {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
         }
 
+        List<String> modelCandidates = aiProperties.getGeminiModelCandidates();
+        ApiException lastFailure = null;
+
+        for (String model : modelCandidates) {
+            try {
+                return generateWithModel(model, prompt, documentTitle, documentContext);
+            } catch (ApiException ex) {
+                if (!shouldTryNextModel(ex, modelCandidates, model)) {
+                    throw ex;
+                }
+                lastFailure = ex;
+                LOGGER.warn("Gemini model {} failed, trying next model. Reason: {}", model, ex.getMessage());
+            }
+        }
+
+        if (lastFailure != null) {
+            throw lastFailure;
+        }
+        throw new ApiException(HttpStatus.BAD_GATEWAY, "No Gemini model candidates are configured");
+    }
+
+    private GeminiResult generateWithModel(
+            String model,
+            String prompt,
+            String documentTitle,
+            String documentContext) {
         try {
             GeminiGenerateResponse response = restClient()
                     .post()
-                    .uri("/%s:generateContent".formatted(requestBuilder.modelPath()))
+                    .uri("/%s:generateContent".formatted(requestBuilder.modelPath(model)))
                     .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
                     .body(requestBuilder.build(prompt, documentTitle, documentContext))
                     .retrieve()
@@ -57,14 +89,87 @@ public class GeminiChatClient {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Gemini API returned an empty response");
             }
 
-            return new GeminiResult(text.trim(), modelName());
+            return new GeminiResult(text.trim(), normalizeModelLabel(model));
         } catch (RestClientResponseException ex) {
+            throw geminiApiException(model, ex);
+        } catch (RestClientException ex) {
             throw new ApiException(
                     HttpStatus.BAD_GATEWAY,
-                    "Gemini API request failed: " + shorten(ex.getResponseBodyAsString()));
-        } catch (RestClientException ex) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "Gemini API request failed: " + shorten(ex.getMessage()));
+                    "Gemini API request failed for model " + model + ": " + shorten(ex.getMessage()));
         }
+    }
+
+    public String performOcr(byte[] imageBytes) {
+        if (!isConfigured()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
+        }
+
+        String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
+        Map<String, Object> requestBody = Map.of(
+                "contents", List.of(
+                        Map.of(
+                                "parts", List.of(
+                                        Map.of("text",
+                                                "Extract all readable text from this document image page. Output only the plain text found in the document. Do not summarize, explain or translate it. Keep the original language."),
+                                        Map.of("inlineData", Map.of("mimeType", "image/png", "data", base64Image))))));
+
+        try {
+            GeminiGenerateResponse response = restClient()
+                    .post()
+                    .uri("/%s:generateContent".formatted(requestBuilder.modelPath()))
+                    .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
+                    .body(requestBody)
+                    .retrieve()
+                    .body(GeminiGenerateResponse.class);
+
+            if (response == null) {
+                return "";
+            }
+            return responseParser.extractText(response);
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
+    private ApiException geminiApiException(String model, RestClientResponseException ex) {
+        int statusCode = ex.getStatusCode().value();
+        if (statusCode == 429) {
+            return new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Gemini quota or rate limit reached for model " + model + ". Please try again later.");
+        }
+        if (statusCode == 400 || statusCode == 401 || statusCode == 403) {
+            return new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Gemini API key or model configuration is invalid for model " + model + ".");
+        }
+        return new ApiException(
+                HttpStatus.BAD_GATEWAY,
+                "Gemini API request failed for model " + model + ": " + shorten(ex.getResponseBodyAsString()));
+    }
+
+    private boolean shouldTryNextModel(ApiException ex, List<String> modelCandidates, String currentModel) {
+        if (modelCandidates.indexOf(currentModel) >= modelCandidates.size() - 1) {
+            return false;
+        }
+        if (ex.getStatus() != HttpStatus.BAD_GATEWAY && ex.getStatus() != HttpStatus.TOO_MANY_REQUESTS) {
+            return false;
+        }
+        String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+        return message.contains("quota")
+                || message.contains("429")
+                || message.contains("503")
+                || message.contains("resource_exhausted")
+                || message.contains("high demand")
+                || message.contains("rate limit")
+                || message.contains("not found")
+                || message.contains("404")
+                || message.contains("model")
+                || message.contains("invalid");
+    }
+
+    private String normalizeModelLabel(String model) {
+        return model.startsWith("models/") ? model.substring("models/".length()) : model;
     }
 
     private RestClient restClient() {
