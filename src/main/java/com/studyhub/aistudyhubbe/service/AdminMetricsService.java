@@ -20,16 +20,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AdminMetricsService {
 
     private static final double BYTES_PER_GB = 1024D * 1024D * 1024D;
-    private static final long DEFAULT_CACHE_TTL_MS = 15_000L;
-
-    private final long cacheTtlMs;
+    private static final long CACHE_TTL_MS = 15_000L;
 
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
@@ -47,9 +44,7 @@ public class AdminMetricsService {
             SubjectRepository subjectRepository,
             ReportRepository reportRepository,
             ChatMessageRepository chatMessageRepository,
-            StorageUsageService storageUsageService,
-            @Value("${app.admin.metrics.cache-ttl-ms:" + DEFAULT_CACHE_TTL_MS + "}") long cacheTtlMs) {
-        this.cacheTtlMs = Math.max(cacheTtlMs, 0L);
+            StorageUsageService storageUsageService) {
         this.userRepository = userRepository;
         this.documentRepository = documentRepository;
         this.subjectRepository = subjectRepository;
@@ -61,14 +56,14 @@ public class AdminMetricsService {
     public AdminDashboardMetricsResponse getDashboardMetrics() {
         long now = System.currentTimeMillis();
         AdminDashboardMetricsResponse snapshot = cachedMetrics;
-        if (cacheTtlMs > 0 && snapshot != null && now - cachedMetricsAtMs < cacheTtlMs) {
+        if (snapshot != null && now - cachedMetricsAtMs < CACHE_TTL_MS) {
             return snapshot;
         }
 
         synchronized (metricsCacheLock) {
             now = System.currentTimeMillis();
             snapshot = cachedMetrics;
-            if (cacheTtlMs > 0 && snapshot != null && now - cachedMetricsAtMs < cacheTtlMs) {
+            if (snapshot != null && now - cachedMetricsAtMs < CACHE_TTL_MS) {
                 return snapshot;
             }
 

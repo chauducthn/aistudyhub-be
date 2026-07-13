@@ -91,69 +91,9 @@ public class GeminiChatClient {
 
             return new GeminiResult(text.trim(), normalizeModelLabel(model));
         } catch (RestClientResponseException ex) {
-            throw geminiApiException(model, ex);
+            throw geminiApiException(ex);
         } catch (RestClientException ex) {
-            throw new ApiException(
-                    HttpStatus.BAD_GATEWAY,
-                    "Gemini API request failed for model " + model + ": " + shorten(ex.getMessage()));
-        }
-    }
-
-    public String performOcr(byte[] imageBytes) {
-        if (!isConfigured()) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
-        }
-
-        String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
-        Map<String, Object> requestBody = Map.of(
-                "contents", List.of(
-                        Map.of(
-                                "parts", List.of(
-                                        Map.of("text",
-                                                "Extract all readable text from this document image page. Output only the plain text found in the document. Do not summarize, explain or translate it. Keep the original language."),
-                                        Map.of("inlineData", Map.of("mimeType", "image/png", "data", base64Image))))));
-
-        try {
-            GeminiGenerateResponse response = restClient()
-                    .post()
-                    .uri("/%s:generateContent".formatted(requestBuilder.modelPath()))
-                    .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
-                    .body(requestBody)
-                    .retrieve()
-                    .body(GeminiGenerateResponse.class);
-
-            if (response == null) {
-                return "";
-            }
-            return responseParser.extractText(response);
-        } catch (Exception ex) {
-            return "";
-        }
-    }
-
-    private ApiException geminiApiException(String model, RestClientResponseException ex) {
-        int statusCode = ex.getStatusCode().value();
-        if (statusCode == 429) {
-            return new ApiException(
-                    HttpStatus.BAD_GATEWAY,
-                    "Gemini quota or rate limit reached for model " + model + ". Please try again later.");
-        }
-        if (statusCode == 400 || statusCode == 401 || statusCode == 403) {
-            return new ApiException(
-                    HttpStatus.BAD_GATEWAY,
-                    "Gemini API key or model configuration is invalid for model " + model + ".");
-        }
-        return new ApiException(
-                HttpStatus.BAD_GATEWAY,
-                "Gemini API request failed for model " + model + ": " + shorten(ex.getResponseBodyAsString()));
-    }
-
-    private boolean shouldTryNextModel(ApiException ex, List<String> modelCandidates, String currentModel) {
-        if (modelCandidates.indexOf(currentModel) >= modelCandidates.size() - 1) {
-            return false;
-        }
-        if (ex.getStatus() != HttpStatus.BAD_GATEWAY && ex.getStatus() != HttpStatus.TOO_MANY_REQUESTS) {
-            return false;
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Gemini is temporarily unavailable. Please try again later.");
         }
         String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
         return message.contains("quota")
@@ -172,6 +112,21 @@ public class GeminiChatClient {
         return model.startsWith("models/") ? model.substring("models/".length()) : model;
     }
 
+    private ApiException geminiApiException(RestClientResponseException ex) {
+        int statusCode = ex.getStatusCode().value();
+        if (statusCode == 429) {
+            return new ApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Gemini quota or rate limit has been reached. Please try again later or use another API key.");
+        }
+        if (statusCode == 400 || statusCode == 401 || statusCode == 403) {
+            return new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Gemini API key or model configuration is invalid. Please check backend AI settings.");
+        }
+        return new ApiException(HttpStatus.BAD_GATEWAY, "Gemini is temporarily unavailable. Please try again later.");
+    }
+
     private RestClient restClient() {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         Duration timeout = Duration.ofSeconds(Math.max(aiProperties.getGemini().getTimeoutSeconds(), 1));
@@ -182,13 +137,6 @@ public class GeminiChatClient {
                 .baseUrl(aiProperties.getGemini().getBaseUrl())
                 .requestFactory(requestFactory)
                 .build();
-    }
-
-    private String shorten(String message) {
-        if (!StringUtils.hasText(message)) {
-            return "Unknown error";
-        }
-        return message.length() > 300 ? message.substring(0, 300) : message;
     }
 
     public record GeminiResult(String response, String model) {

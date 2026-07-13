@@ -7,8 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.ai")
 public class AiProperties {
 
-    private String provider = "auto";
-    private boolean fallbackToLocal = true;
+    private String provider = "gemini";
     private Gemini gemini = new Gemini();
     private OpenAi openai = new OpenAi();
 
@@ -42,14 +41,6 @@ public class AiProperties {
 
     public void setProvider(String provider) {
         this.provider = provider;
-    }
-
-    public boolean isFallbackToLocal() {
-        return fallbackToLocal;
-    }
-
-    public void setFallbackToLocal(boolean fallbackToLocal) {
-        this.fallbackToLocal = fallbackToLocal;
     }
 
     public Gemini getGemini() {
