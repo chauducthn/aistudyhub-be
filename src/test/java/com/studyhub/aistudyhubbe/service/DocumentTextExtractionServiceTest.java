@@ -23,12 +23,14 @@ import org.junit.jupiter.api.Test;
 
 class DocumentTextExtractionServiceTest {
 
-    private final DocumentTextExtractionService service = new DocumentTextExtractionService();
+    private DocumentTextExtractionService service;
 
     Path tempDir;
 
     @BeforeEach
     void setUp() throws Exception {
+        ChatbotAiResponder chatbotAiResponder = org.mockito.Mockito.mock(ChatbotAiResponder.class);
+        service = new DocumentTextExtractionService(chatbotAiResponder);
         tempDir = Path.of("target", "text-extraction-test", UUID.randomUUID().toString());
         Files.createDirectories(tempDir);
     }

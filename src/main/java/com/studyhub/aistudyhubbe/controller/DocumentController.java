@@ -62,6 +62,19 @@ public class DocumentController {
                 documentService.uploadDocument(requireUserId(principal), title, description, subjectId, file));
     }
 
+    @Operation(summary = "Upload multiple documents for the current user")
+    @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<java.util.List<DocumentResponse>> uploadDocuments(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam("files") java.util.List<MultipartFile> files,
+            @RequestParam(value = "title", required = false) String title,
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "subjectId", required = false) Long subjectId) {
+        return ApiResponse.ok(
+                "Documents uploaded",
+                documentService.uploadDocuments(requireUserId(principal), title, description, subjectId, files));
+    }
+
     @Operation(summary = "List current user's documents")
     @GetMapping
     public ApiResponse<PageResponse<DocumentResponse>> listDocuments(
@@ -165,6 +178,16 @@ public class DocumentController {
                 .contentLength(file.contentLength())
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
                 .body(new ByteArrayResource(file.bytes()));
+    }
+
+    @Operation(summary = "Perform plagiarism check on a document using AI comparing with Internet data")
+    @PostMapping("/{id}/plagiarism-check")
+    public ApiResponse<DocumentResponse> checkPlagiarism(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id) {
+        return ApiResponse.ok(
+                "Plagiarism check completed",
+                documentService.checkPlagiarism(requireUserId(principal), id));
     }
 
     @Operation(summary = "Soft delete current user's document")

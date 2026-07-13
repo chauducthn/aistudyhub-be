@@ -87,8 +87,8 @@ public class AdminController {
     @PatchMapping("/users/{userId}/password")
     public ApiResponse<AdminUserResponse> resetPassword(
             @PathVariable Long userId,
-            @Valid @RequestBody AdminResetPasswordRequest request) {
-        return ApiResponse.ok("Password reset", adminService.resetPassword(userId, request.newPassword()));
+            @RequestBody(required = false) AdminResetPasswordRequest request) {
+        return ApiResponse.ok("Password reset", adminService.resetPassword(userId, null));
     }
 
     @Operation(summary = "Delete a user account and all related data")
@@ -152,10 +152,11 @@ public class AdminController {
     @Operation(summary = "List document reports for admin review")
     @GetMapping("/reports")
     public ApiResponse<PageResponse<ReportResponse>> listReports(
-            @RequestParam(required = false) ReportStatus status,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.ok(reportService.listReports(status, page, size));
+        return ApiResponse.ok(reportService.listReports(status, keyword, page, size));
     }
 
     @Operation(summary = "Get a document report detail for admin review")

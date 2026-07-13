@@ -55,9 +55,12 @@ public class GeminiChatRequestBuilder {
     }
 
     public String modelPath() {
-        String model = aiProperties.getGemini().getModel();
+        return modelPath(aiProperties.getGemini().getModel());
+    }
+
+    public String modelPath(String model) {
         if (!StringUtils.hasText(model)) {
-            return "models/gemini-2.0-flash";
+            return "models/gemini-2.0-flash-lite";
         }
         String trimmedModel = model.trim();
         return trimmedModel.startsWith("models/") ? trimmedModel : "models/" + trimmedModel;

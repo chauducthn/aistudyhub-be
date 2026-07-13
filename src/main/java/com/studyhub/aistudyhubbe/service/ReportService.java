@@ -67,15 +67,29 @@ public class ReportService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ReportResponse> listReports(ReportStatus status, int page, int size) {
+    public PageResponse<ReportResponse> listReports(String statusStr, String keyword, int page, int size) {
         Pageable pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.min(Math.max(size, 1), 100),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        Page<ReportResponse> reports = reportRepository.searchReports(status, pageable)
-                .map(ReportResponse::from);
-        return PageResponse.from(reports);
+        String trimmedKeyword = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+
+        Page<Report> reportsPage;
+        if ("PROCESSED".equalsIgnoreCase(statusStr)) {
+            reportsPage = reportRepository.findProcessedReports(trimmedKeyword, pageable);
+        } else {
+            ReportStatus status = null;
+            if (statusStr != null && !statusStr.isBlank() && !"ALL".equalsIgnoreCase(statusStr)) {
+                try {
+                    status = ReportStatus.valueOf(statusStr.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                }
+            }
+            reportsPage = reportRepository.searchReports(status, trimmedKeyword, pageable);
+        }
+
+        return PageResponse.from(reportsPage.map(ReportResponse::from));
     }
 
     @Transactional(readOnly = true)

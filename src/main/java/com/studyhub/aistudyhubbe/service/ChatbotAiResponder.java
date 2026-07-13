@@ -13,14 +13,17 @@ import org.springframework.util.StringUtils;
 public class ChatbotAiResponder {
 
     private final GeminiChatClient geminiChatClient;
+    private final OpenAiChatClient openAiChatClient;
     private final AiProperties aiProperties;
     private final RagRetrievalService ragRetrievalService;
 
     public ChatbotAiResponder(
             GeminiChatClient geminiChatClient,
+            OpenAiChatClient openAiChatClient,
             AiProperties aiProperties,
             RagRetrievalService ragRetrievalService) {
         this.geminiChatClient = geminiChatClient;
+        this.openAiChatClient = openAiChatClient;
         this.aiProperties = aiProperties;
         this.ragRetrievalService = ragRetrievalService;
     }
