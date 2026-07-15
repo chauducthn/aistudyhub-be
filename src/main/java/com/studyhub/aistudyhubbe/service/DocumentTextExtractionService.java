@@ -71,12 +71,10 @@ public class DocumentTextExtractionService {
             int pageCount = Math.min(document.getNumberOfPages(), 10);
             for (int page = 0; page < pageCount; page++) {
                 try {
-                    java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(page, 200);
+                    java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(page, 300);
                     java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
                     javax.imageio.ImageIO.write(bim, "png", baos);
                     byte[] imageBytes = baos.toByteArray();
-                    bim.flush();
-
                     String pageText = chatbotAiResponder.performOcr(imageBytes);
                     if (pageText != null && !pageText.isBlank()) {
                         ocrText.append(pageText).append("\n");

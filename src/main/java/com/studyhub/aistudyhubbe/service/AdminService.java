@@ -180,9 +180,11 @@ public class AdminService {
     public AdminUserResponse resetPassword(Long userId, String newPassword) {
         User user = getUserOrThrow(userId);
 
-        String passwordToSet = (newPassword == null || newPassword.isBlank()) ? "123456" : newPassword;
-        user.setPasswordHash(passwordEncoder.encode(passwordToSet));
-        user.setPasswordResetRequired(true);
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "New password is required");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordResetRequired(false);
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
         refreshTokenRepository.revokeAllByUserId(user.getId());
