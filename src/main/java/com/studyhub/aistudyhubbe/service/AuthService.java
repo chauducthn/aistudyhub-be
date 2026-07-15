@@ -220,7 +220,8 @@ public class AuthService {
                     userResponse.fullName(),
                     avatarStorageService.presignAvatarUrl(user.getAvatarUrl()),
                     userResponse.role(),
-                    userResponse.status());
+                    userResponse.status(),
+                    userResponse.passwordResetRequired());
         }
         return new AuthResponse(
                 accessToken,

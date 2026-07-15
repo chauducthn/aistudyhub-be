@@ -29,6 +29,12 @@ public class DocumentTextExtractionService {
 
     private static final int MAX_EXTRACTED_TEXT_LENGTH = 200_000;
 
+    private final ChatbotAiResponder chatbotAiResponder;
+
+    public DocumentTextExtractionService(ChatbotAiResponder chatbotAiResponder) {
+        this.chatbotAiResponder = chatbotAiResponder;
+    }
+
     public ExtractionResult extract(Path documentPath, String fileType) {
         try {
             String text = switch (normalizeFileType(fileType)) {
@@ -55,7 +61,31 @@ public class DocumentTextExtractionService {
 
     private String extractPdf(Path documentPath) throws IOException {
         try (PDDocument document = Loader.loadPDF(documentPath.toFile())) {
-            return new PDFTextStripper().getText(document);
+            String text = new PDFTextStripper().getText(document);
+            if (text != null && text.trim().length() >= 10) {
+                return text;
+            }
+
+            org.apache.pdfbox.rendering.PDFRenderer pdfRenderer = new org.apache.pdfbox.rendering.PDFRenderer(document);
+            StringBuilder ocrText = new StringBuilder();
+            int pageCount = Math.min(document.getNumberOfPages(), 10);
+            for (int page = 0; page < pageCount; page++) {
+                try {
+                    java.awt.image.BufferedImage bim = pdfRenderer.renderImageWithDPI(page, 200);
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    javax.imageio.ImageIO.write(bim, "png", baos);
+                    byte[] imageBytes = baos.toByteArray();
+                    bim.flush();
+
+                    String pageText = chatbotAiResponder.performOcr(imageBytes);
+                    if (pageText != null && !pageText.isBlank()) {
+                        ocrText.append(pageText).append("\n");
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            return ocrText.toString();
         }
     }
 

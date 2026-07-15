@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,8 +38,34 @@ public class ChatbotController {
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody ChatRequest request) {
         return ApiResponse.ok(
-                "Chat response generated",
+                 "Chat response generated",
                 chatbotService.sendMessage(requireUserId(principal), request));
+    }
+
+    @Operation(summary = "List current user's chat sessions")
+    @GetMapping("/sessions")
+    public ApiResponse<java.util.List<com.studyhub.aistudyhubbe.dto.ChatSessionResponse>> listSessions(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(chatbotService.listSessions(requireUserId(principal)));
+    }
+
+    @Operation(summary = "List messages in a chat session")
+    @GetMapping("/sessions/{sessionId}/messages")
+    public ApiResponse<PageResponse<ChatMessageResponse>> getSessionMessages(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.ok(chatbotService.getSessionMessages(requireUserId(principal), sessionId, page, size));
+    }
+
+    @Operation(summary = "Delete a chat session")
+    @DeleteMapping("/sessions/{sessionId}")
+    public ApiResponse<Void> deleteSession(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long sessionId) {
+        chatbotService.deleteSession(requireUserId(principal), sessionId);
+        return ApiResponse.ok("Chat session deleted", null);
     }
 
     @Operation(summary = "List current user's chat history")

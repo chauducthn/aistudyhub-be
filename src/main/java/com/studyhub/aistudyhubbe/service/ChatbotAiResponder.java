@@ -13,21 +13,44 @@ import org.springframework.util.StringUtils;
 public class ChatbotAiResponder {
 
     private final GeminiChatClient geminiChatClient;
+    private final OpenAiChatClient openAiChatClient;
     private final AiProperties aiProperties;
     private final RagRetrievalService ragRetrievalService;
 
     public ChatbotAiResponder(
             GeminiChatClient geminiChatClient,
+            OpenAiChatClient openAiChatClient,
             AiProperties aiProperties,
             RagRetrievalService ragRetrievalService) {
         this.geminiChatClient = geminiChatClient;
+        this.openAiChatClient = openAiChatClient;
         this.aiProperties = aiProperties;
         this.ragRetrievalService = ragRetrievalService;
     }
 
     public StudyAiResponse generate(String prompt, Document document) {
         String context = ragRetrievalService.buildContext(document, prompt);
-        ensureGeminiProvider();
+        String provider = normalizedProvider();
+
+        if ("openai".equals(provider)) {
+            if (!openAiChatClient.isConfigured()) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "OpenAI API key is not configured");
+            }
+            OpenAiChatClient.OpenAiResult result = openAiChatClient.generate(
+                    prompt,
+                    document == null ? null : document.getTitle(),
+                    context);
+            return new StudyAiResponse(result.response(), result.model());
+        }
+
+        if (!"gemini".equals(provider)) {
+            throw new ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Unsupported AI provider: %s. Configure AI_PROVIDER=gemini or openai.".formatted(provider));
+        }
+        if (!geminiChatClient.isConfigured()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
+        }
 
         GeminiResult geminiResult = geminiChatClient.generate(
                 prompt,
@@ -36,15 +59,12 @@ public class ChatbotAiResponder {
         return new StudyAiResponse(geminiResult.response(), geminiResult.model());
     }
 
-    private void ensureGeminiProvider() {
+    public String performOcr(byte[] imageBytes) {
         String provider = normalizedProvider();
-        if (!"gemini".equals(provider)) {
-            throw new ApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Unsupported AI provider: %s. Configure AI_PROVIDER=gemini.".formatted(provider));
-        }
-        if (!geminiChatClient.isConfigured()) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
+        if ("openai".equals(provider)) {
+            return openAiChatClient.performOcr(imageBytes);
+        } else {
+            return geminiChatClient.performOcr(imageBytes);
         }
     }
 

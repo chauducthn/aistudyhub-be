@@ -10,7 +10,8 @@ public record UserResponse(
         String fullName,
         String avatarUrl,
         Role role,
-        UserStatus status
+        UserStatus status,
+        boolean passwordResetRequired
 ) {
 
     public static UserResponse from(User user) {
@@ -20,7 +21,8 @@ public record UserResponse(
                 user.getFullName(),
                 user.getAvatarUrl(),
                 user.getRole(),
-                user.getStatus()
+                user.getStatus(),
+                user.isPasswordResetRequired()
         );
     }
 }

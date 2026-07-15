@@ -10,10 +10,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
@@ -75,7 +79,7 @@ public class DocumentStorageService {
     }
 
     public StoredDocumentFile storeDocument(Long userId, MultipartFile file) {
-        validateFile(file);
+        validateDocumentFile(file);
 
         String originalFilename = cleanOriginalFilename(file.getOriginalFilename());
         String extension = getExtension(originalFilename);
@@ -164,7 +168,7 @@ public class DocumentStorageService {
         }
     }
 
-    private void validateFile(MultipartFile file) {
+    public void validateDocumentFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Document file is required");
         }
@@ -182,18 +186,24 @@ public class DocumentStorageService {
         }
 
         String contentType = file.getContentType();
-        if (contentType == null || contentType.isBlank() || "application/octet-stream".equals(contentType)) {
-            return;
-        }
+        validateFileSignature(file, extension);
 
         String expectedContentType = EXPECTED_CONTENT_TYPES.get(extension);
-        if (expectedContentType != null && !expectedContentType.equalsIgnoreCase(contentType)) {
+        if (expectedContentType != null
+                && contentType != null
+                && !contentType.isBlank()
+                && !"application/octet-stream".equalsIgnoreCase(contentType)
+                && !contentTypeMatches(extension, contentType, expectedContentType)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Document content type does not match the file extension");
         }
     }
 
     private String cleanOriginalFilename(String originalFilename) {
-        String cleanName = StringUtils.cleanPath(originalFilename == null ? "" : originalFilename);
+        String rawName = originalFilename == null ? "" : originalFilename;
+        if (rawName.contains("/") || rawName.contains("\\")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only individual document files can be uploaded");
+        }
+        String cleanName = StringUtils.cleanPath(rawName);
         cleanName = StringUtils.getFilename(cleanName);
         if (cleanName == null || cleanName.isBlank() || cleanName.contains("..")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid document file name");
@@ -207,6 +217,133 @@ public class DocumentStorageService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Document file extension is required");
         }
         return filename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private void validateFileSignature(MultipartFile file, String extension) {
+        byte[] header = readHeader(file, 8192);
+        boolean valid = switch (extension) {
+            case "pdf" -> startsWith(header, "%PDF-".getBytes(StandardCharsets.US_ASCII));
+            case "doc", "xls", "ppt" -> startsWith(header, new byte[] {
+                    (byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1
+            });
+            case "docx", "xlsx", "pptx", "odt", "ods", "odp" -> looksLikeZip(header)
+                    && zipStructureMatches(file, extension);
+            case "rtf" -> startsWith(header, "{\\rtf".getBytes(StandardCharsets.US_ASCII));
+            case "txt", "md", "csv" -> looksLikeText(header);
+            default -> false;
+        };
+
+        if (!valid) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Document file content does not match the file extension");
+        }
+    }
+
+    private byte[] readHeader(MultipartFile file, int maxBytes) {
+        try (InputStream inputStream = file.getInputStream()) {
+            return inputStream.readNBytes(maxBytes);
+        } catch (IOException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Could not read document file");
+        }
+    }
+
+    private boolean startsWith(byte[] value, byte[] prefix) {
+        if (value.length < prefix.length) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length; i++) {
+            if (value[i] != prefix[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean looksLikeText(byte[] value) {
+        if (value.length == 0) {
+            return false;
+        }
+        for (byte rawByte : value) {
+            int b = rawByte & 0xFF;
+            if (b == 0) {
+                return false;
+            }
+            if (b < 0x09) {
+                return false;
+            }
+            if (b > 0x0D && b < 0x20) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean looksLikeZip(byte[] header) {
+        return startsWith(header, new byte[] {0x50, 0x4B, 0x03, 0x04})
+                || startsWith(header, new byte[] {0x50, 0x4B, 0x05, 0x06})
+                || startsWith(header, new byte[] {0x50, 0x4B, 0x07, 0x08});
+    }
+
+    private boolean zipStructureMatches(MultipartFile file, String extension) {
+        try (ZipInputStream zipInputStream = new ZipInputStream(file.getInputStream())) {
+            boolean hasContentTypes = false;
+            boolean hasMainDocument = false;
+            boolean hasOdfMimeType = false;
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                String name = entry.getName();
+                if ("[Content_Types].xml".equals(name)) {
+                    hasContentTypes = true;
+                }
+                if (matchesMainZipEntry(extension, name)) {
+                    hasMainDocument = true;
+                }
+                if ("mimetype".equals(name) && odfMimeTypeMatches(extension, new String(zipInputStream.readAllBytes(), StandardCharsets.UTF_8))) {
+                    hasOdfMimeType = true;
+                }
+            }
+            return switch (extension) {
+                case "docx", "xlsx", "pptx" -> hasContentTypes && hasMainDocument;
+                case "odt", "ods", "odp" -> hasOdfMimeType;
+                default -> false;
+            };
+        } catch (IOException ex) {
+            return false;
+        }
+    }
+
+    private boolean matchesMainZipEntry(String extension, String entryName) {
+        return switch (extension) {
+            case "docx" -> "word/document.xml".equals(entryName);
+            case "xlsx" -> "xl/workbook.xml".equals(entryName);
+            case "pptx" -> "ppt/presentation.xml".equals(entryName);
+            default -> false;
+        };
+    }
+
+    private boolean odfMimeTypeMatches(String extension, String mimeType) {
+        return switch (extension) {
+            case "odt" -> "application/vnd.oasis.opendocument.text".equals(mimeType);
+            case "ods" -> "application/vnd.oasis.opendocument.spreadsheet".equals(mimeType);
+            case "odp" -> "application/vnd.oasis.opendocument.presentation".equals(mimeType);
+            default -> false;
+        };
+    }
+
+    private boolean contentTypeMatches(String extension, String contentType, String expectedContentType) {
+        String normalized = contentType.toLowerCase(Locale.ROOT);
+        if (expectedContentType.equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        List<String> aliases = switch (extension) {
+            case "txt", "md", "csv" -> List.of("text/plain", "application/csv", "application/vnd.ms-excel");
+            case "rtf" -> List.of("text/rtf");
+            case "doc", "xls", "ppt" -> List.of("application/octet-stream");
+            default -> List.of();
+        };
+        return aliases.stream().anyMatch(alias -> alias.equalsIgnoreCase(normalized))
+                || Arrays.stream(normalized.split(";"))
+                .map(String::trim)
+                .anyMatch(part -> part.equalsIgnoreCase(expectedContentType));
     }
 
     private String resolveContentType(MultipartFile file, String extension) {

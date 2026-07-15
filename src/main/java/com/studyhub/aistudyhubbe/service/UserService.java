@@ -66,7 +66,8 @@ public class UserService {
                 response.fullName(),
                 avatarStorageService.presignAvatarUrl(user.getAvatarUrl()),
                 response.role(),
-                response.status());
+                response.status(),
+                response.passwordResetRequired());
     }
 
     @Transactional
@@ -81,6 +82,7 @@ public class UserService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setPasswordResetRequired(false);
         userRepository.save(user);
     }
 
