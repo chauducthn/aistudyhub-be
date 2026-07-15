@@ -7,7 +7,6 @@ import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser;
 import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser.GeminiGenerateResponse;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -95,8 +94,15 @@ public class GeminiChatClient {
         } catch (RestClientException ex) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "Gemini is temporarily unavailable. Please try again later.");
         }
+    }
+
+    private boolean shouldTryNextModel(ApiException ex, List<String> modelCandidates, String model) {
+        if (modelCandidates.indexOf(model) >= modelCandidates.size() - 1) {
+            return false;
+        }
         String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
-        return message.contains("quota")
+        return ex.getStatus() == HttpStatus.TOO_MANY_REQUESTS
+                || message.contains("quota")
                 || message.contains("429")
                 || message.contains("503")
                 || message.contains("resource_exhausted")
