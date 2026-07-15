@@ -253,4 +253,5 @@ public class AiProperties {
             this.timeoutSeconds = timeoutSeconds;
         }
     }
+
 }

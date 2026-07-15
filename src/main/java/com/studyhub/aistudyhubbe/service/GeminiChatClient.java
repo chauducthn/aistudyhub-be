@@ -7,6 +7,7 @@ import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser;
 import com.studyhub.aistudyhubbe.service.gemini.GeminiChatResponseParser.GeminiGenerateResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -143,6 +144,42 @@ public class GeminiChatClient {
                 .baseUrl(aiProperties.getGemini().getBaseUrl())
                 .requestFactory(requestFactory)
                 .build();
+    }
+
+    public String performOcr(byte[] imageBytes) {
+        if (!isConfigured()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API key is not configured");
+        }
+
+        String base64Image = java.util.Base64.getEncoder().encodeToString(imageBytes);
+
+        Map<String, Object> requestBody = Map.of(
+            "contents", List.of(
+                Map.of(
+                    "parts", List.of(
+                        Map.of("text", "Extract all readable text from this document image page. Output only the plain text found in the document. Do not summarize, explain or translate it. Keep the original language."),
+                        Map.of("inlineData", Map.of("mimeType", "image/png", "data", base64Image))
+                    )
+                )
+            )
+        );
+
+        try {
+            GeminiGenerateResponse response = restClient()
+                    .post()
+                    .uri("/%s:generateContent".formatted(requestBuilder.modelPath()))
+                    .header("x-goog-api-key", aiProperties.getGemini().getApiKey())
+                    .body(requestBody)
+                    .retrieve()
+                    .body(GeminiGenerateResponse.class);
+
+            if (response == null) {
+                return "";
+            }
+            return responseParser.extractText(response);
+        } catch (Exception ex) {
+            return "";
+        }
     }
 
     public record GeminiResult(String response, String model) {
