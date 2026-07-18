@@ -18,7 +18,7 @@ if (Test-Path -LiteralPath $envFile) {
 }
 
 $env:SPRING_PROFILES_ACTIVE = 'mysql'
-$env:DB_URL = 'jdbc:mysql://127.0.0.1:3306/aistudyhub?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh'
+$env:DB_URL = 'jdbc:mysql://127.0.0.1:3307/aistudyhub?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh'
 $env:DB_USERNAME = 'root'
 $env:DB_PASSWORD = '123456'
 $env:JPA_DDL_AUTO = 'update'
