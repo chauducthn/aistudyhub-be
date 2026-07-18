@@ -22,8 +22,8 @@ Write-Host "Waiting for MySQL healthcheck..."
 for ($i = 1; $i -le 30; $i++) {
     $status = docker inspect --format '{{.State.Health.Status}}' aistudyhub-mysql 2>$null
     if ($status -eq 'healthy') {
-        Write-Host "MySQL is ready on 127.0.0.1:3306"
-        Write-Host "Use DB_URL=jdbc:mysql://127.0.0.1:3306/aistudyhub?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh"
+        Write-Host "MySQL is ready on 127.0.0.1:3307"
+        Write-Host "Use DB_URL=jdbc:mysql://127.0.0.1:3307/aistudyhub?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh"
         exit 0
     }
     Start-Sleep -Seconds 2

@@ -3,7 +3,12 @@ package com.studyhub.aistudyhubbe.service;
 import com.studyhub.aistudyhubbe.config.AiProperties;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -14,6 +19,10 @@ import org.springframework.web.client.RestClientResponseException;
 
 @Service
 public class QwenChatClient {
+
+    private static final Duration DEFAULT_RATE_LIMIT_RETRY_DELAY = Duration.ofSeconds(2);
+    private static final Duration MAX_RATE_LIMIT_RETRY_DELAY = Duration.ofSeconds(20);
+    private static final int MAX_UPSTREAM_ERROR_LENGTH = 500;
 
     private static final String SYSTEM_INSTRUCTION = """
             You are AI Study Hub, an academic AI assistant.
@@ -70,13 +79,7 @@ public class QwenChatClient {
         );
 
         try {
-            QwenChatResponse response = restClient()
-                    .post()
-                    .uri("/chat/completions")
-                    .header("Authorization", "Bearer " + aiProperties.getQwen().getApiKey())
-                    .body(request)
-                    .retrieve()
-                    .body(QwenChatResponse.class);
+            QwenChatResponse response = executeWithRateLimitRetry(request);
 
             if (response == null || response.choices() == null || response.choices().isEmpty()) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "Qwen API returned an empty response");
@@ -88,17 +91,82 @@ public class QwenChatClient {
             }
 
             return new QwenResult(text.trim(), aiProperties.getQwen().getModel());
-        } catch (RestClientResponseException ex) {
-            throw qwenApiException(ex);
         } catch (RestClientException ex) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "Qwen API is temporarily unavailable. Please try again later.");
         }
     }
 
+    private QwenChatResponse executeWithRateLimitRetry(QwenChatRequest request) {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                return executeRequest(request);
+            } catch (RestClientResponseException ex) {
+                boolean shouldRetry = attempt == 0 && ex.getStatusCode().value() == 429;
+                if (!shouldRetry) {
+                    throw qwenApiException(ex);
+                }
+                waitBeforeRateLimitRetry(ex);
+            }
+        }
+        throw new ApiException(HttpStatus.BAD_GATEWAY, "Qwen API retry failed unexpectedly.");
+    }
+
+    private QwenChatResponse executeRequest(QwenChatRequest request) {
+        return restClient()
+                .post()
+                .uri("/chat/completions")
+                .header("Authorization", "Bearer " + aiProperties.getQwen().getApiKey())
+                .body(request)
+                .retrieve()
+                .body(QwenChatResponse.class);
+    }
+
+    private void waitBeforeRateLimitRetry(RestClientResponseException ex) {
+        String retryAfter = ex.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER);
+        Duration delay = parseRetryDelay(retryAfter, Instant.now());
+        try {
+            Thread.sleep(delay.toMillis());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Qwen rate-limit retry was interrupted. Please try again.");
+        }
+    }
+
+    static Duration parseRetryDelay(String retryAfter, Instant now) {
+        if (!StringUtils.hasText(retryAfter)) {
+            return DEFAULT_RATE_LIMIT_RETRY_DELAY;
+        }
+
+        Duration requestedDelay;
+        try {
+            requestedDelay = Duration.ofSeconds(Math.max(Long.parseLong(retryAfter.trim()), 0));
+        } catch (NumberFormatException ignored) {
+            try {
+                Instant retryAt = ZonedDateTime
+                        .parse(retryAfter.trim(), DateTimeFormatter.RFC_1123_DATE_TIME)
+                        .toInstant();
+                requestedDelay = Duration.between(now, retryAt);
+                if (requestedDelay.isNegative()) {
+                    requestedDelay = Duration.ZERO;
+                }
+            } catch (DateTimeParseException invalidDate) {
+                requestedDelay = DEFAULT_RATE_LIMIT_RETRY_DELAY;
+            }
+        }
+
+        return requestedDelay.compareTo(MAX_RATE_LIMIT_RETRY_DELAY) > 0
+                ? MAX_RATE_LIMIT_RETRY_DELAY
+                : requestedDelay;
+    }
+
     private ApiException qwenApiException(RestClientResponseException ex) {
         int statusCode = ex.getStatusCode().value();
         if (statusCode == 429) {
-            return new ApiException(HttpStatus.TOO_MANY_REQUESTS, "Qwen quota or rate limit has been reached.");
+            return new ApiException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Qwen/OpenRouter is temporarily rate limited after one retry. " + upstreamErrorDetail(ex));
         }
         if (statusCode == 400 || statusCode == 401 || statusCode == 403) {
             return new ApiException(
@@ -106,6 +174,22 @@ public class QwenChatClient {
                     "Qwen API key, endpoint, or model configuration is invalid. Please check QWEN_* settings.");
         }
         return new ApiException(HttpStatus.BAD_GATEWAY, "Qwen API returned error: " + ex.getResponseBodyAsString());
+    }
+
+    private String upstreamErrorDetail(RestClientResponseException ex) {
+        String body = ex.getResponseBodyAsString();
+        if (!StringUtils.hasText(body)) {
+            String retryAfter = ex.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER);
+            return StringUtils.hasText(retryAfter)
+                    ? "OpenRouter requested another retry after " + retryAfter.trim() + " seconds."
+                    : "OpenRouter did not provide an error body.";
+        }
+
+        String normalized = body.replaceAll("\\s+", " ").trim();
+        if (normalized.length() > MAX_UPSTREAM_ERROR_LENGTH) {
+            normalized = normalized.substring(0, MAX_UPSTREAM_ERROR_LENGTH) + "...";
+        }
+        return "OpenRouter response: " + normalized;
     }
 
     private RestClient restClient() {
