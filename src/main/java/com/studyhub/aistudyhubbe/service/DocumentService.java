@@ -42,7 +42,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class DocumentService {
 
-    private static final List<DocumentStatus> EXCLUDED_NORMAL_STATUSES = List.of(
+    public static final List<DocumentStatus> EXCLUDED_NORMAL_STATUSES = List.of(
             DocumentStatus.DELETED,
             DocumentStatus.REMOVED,
             DocumentStatus.LOCKED
@@ -79,7 +79,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public DocumentResponse uploadDocument(
             Long userId,
@@ -113,7 +114,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public List<DocumentResponse> uploadDocuments(
             Long userId,
@@ -221,7 +223,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public DocumentResponse updateDocument(Long userId, Long documentId, DocumentUpdateRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
@@ -244,7 +247,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public DocumentResponse updateDocumentSubject(Long userId, Long documentId, DocumentSubjectRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
@@ -259,6 +263,11 @@ public class DocumentService {
     })
     public DocumentResponse updateVisibility(Long userId, Long documentId, DocumentVisibilityRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
+
+        if (document.getStatus() == DocumentStatus.HIDDEN || document.getStatus() == DocumentStatus.LOCKED) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This document has been moderated and its visibility cannot be changed");
+        }
+
         DocumentStatus status = request.status();
 
         if (status != DocumentStatus.PUBLIC && status != DocumentStatus.PRIVATE) {
@@ -311,7 +320,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public void deleteDocument(Long userId, Long documentId) {
         Document document = findOwnedVisibleDocument(userId, documentId);

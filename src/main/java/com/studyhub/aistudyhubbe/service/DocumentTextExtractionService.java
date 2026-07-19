@@ -95,11 +95,30 @@ public class DocumentTextExtractionService {
     }
 
     private String extractDocx(Path documentPath) throws IOException {
+        StringBuilder text = new StringBuilder();
         try (InputStream inputStream = Files.newInputStream(documentPath);
-                XWPFDocument document = new XWPFDocument(inputStream);
-                XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
-            return extractor.getText();
+             ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                String entryName = entry.getName();
+                if (entryName.equals("word/document.xml")) {
+                    String xml = new String(zipInputStream.readAllBytes(), StandardCharsets.UTF_8);
+                    xml = xml.replace("</w:p>", "\n");
+                    xml = xml.replace("</w:tr>", "\n");
+                    text.append(stripXmlText(xml));
+                    break;
+                }
+            }
         }
+        String result = text.toString();
+        if (result.trim().isEmpty()) {
+            try (InputStream inputStream = Files.newInputStream(documentPath);
+                 XWPFDocument doc = new XWPFDocument(inputStream);
+                 XWPFWordExtractor extractor = new XWPFWordExtractor(doc)) {
+                return extractor.getText();
+            }
+        }
+        return result;
     }
 
     private String extractPpt(Path documentPath) throws IOException {
