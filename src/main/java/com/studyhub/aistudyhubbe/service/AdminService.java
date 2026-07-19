@@ -147,6 +147,7 @@ public class AdminService {
     public void deleteDocument(Long documentId) {
         Document document = documentRepository.findAdminDetailById(documentId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        chatMessageRepository.nullifyDocumentId(document.getId());
         reportRepository.deleteByDocumentId(document.getId());
         documentChunkRepository.deleteByDocumentId(document.getId());
         documentRepository.delete(document);
@@ -203,6 +204,7 @@ public class AdminService {
         User user = getUserOrThrow(userId);
 
         reportRepository.deleteByUserInvolvement(user.getId());
+        chatMessageRepository.nullifyDocumentIdByUserId(user.getId());
         chatMessageRepository.deleteByUserId(user.getId());
         chatSessionRepository.deleteByUserId(user.getId());
         documentChunkRepository.deleteByUserId(user.getId());

@@ -66,13 +66,13 @@ public class DocumentController {
     @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<java.util.List<DocumentResponse>> uploadDocuments(
             @AuthenticationPrincipal UserPrincipal principal,
-            @RequestParam("files") java.util.List<MultipartFile> files,
+            @RequestParam("files") MultipartFile[] files,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "description", required = false) String description,
             @RequestParam(value = "subjectId", required = false) Long subjectId) {
         return ApiResponse.ok(
                 "Documents uploaded",
-                documentService.uploadDocuments(requireUserId(principal), title, description, subjectId, files));
+                documentService.uploadDocuments(requireUserId(principal), title, description, subjectId, java.util.Arrays.asList(files)));
     }
 
     @Operation(summary = "List current user's documents")

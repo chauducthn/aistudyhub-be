@@ -25,4 +25,12 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     @Modifying
     @Query("delete from ChatMessage c where c.user.id = :userId")
     void deleteByUserId(@Param("userId") Long userId);
+
+    @Modifying
+    @Query("update ChatMessage c set c.document = null where c.document.id = :documentId")
+    void nullifyDocumentId(@Param("documentId") Long documentId);
+
+    @Modifying
+    @Query("update ChatMessage c set c.document = null where c.document.user.id = :userId")
+    void nullifyDocumentIdByUserId(@Param("userId") Long userId);
 }
