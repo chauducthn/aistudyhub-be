@@ -14,4 +14,8 @@ public interface ChatSessionRepository extends JpaRepository<ChatSession, Long> 
     @Modifying
     @Query("update ChatSession c set c.visibleToUser = false where c.id = :sessionId and c.user.id = :userId")
     void hideSession(@Param("sessionId") Long sessionId, @Param("userId") Long userId);
+
+    @Modifying
+    @Query("delete from ChatSession c where c.user.id = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 }

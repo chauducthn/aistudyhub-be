@@ -13,7 +13,9 @@ import com.studyhub.aistudyhubbe.entity.Subject;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.exception.ApiException;
 import java.time.Instant;
+import com.studyhub.aistudyhubbe.entity.Role;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
+import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
@@ -49,6 +51,7 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final SubjectRepository subjectRepository;
+    private final ReportRepository reportRepository;
     private final DocumentStorageService documentStorageService;
     private final DocumentTextExtractionService documentTextExtractionService;
     private final DocumentChunkIndexer documentChunkIndexer;
@@ -58,6 +61,7 @@ public class DocumentService {
             DocumentRepository documentRepository,
             UserRepository userRepository,
             SubjectRepository subjectRepository,
+            ReportRepository reportRepository,
             DocumentStorageService documentStorageService,
             DocumentTextExtractionService documentTextExtractionService,
             DocumentChunkIndexer documentChunkIndexer,
@@ -65,6 +69,7 @@ public class DocumentService {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
+        this.reportRepository = reportRepository;
         this.documentStorageService = documentStorageService;
         this.documentTextExtractionService = documentTextExtractionService;
         this.documentChunkIndexer = documentChunkIndexer;
@@ -271,7 +276,22 @@ public class DocumentService {
                         userId,
                         DocumentStatus.PUBLIC,
                         EXCLUDED_NORMAL_STATUSES)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+                .orElse(null);
+
+        if (document == null) {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "User not found"));
+            if (user.getRole() == Role.ADMIN) {
+                document = documentRepository.findById(documentId)
+                        .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+                boolean isReported = reportRepository.existsByDocumentId(documentId);
+                if (!isReported) {
+                    throw new ApiException(HttpStatus.FORBIDDEN, "Admin can only view reported documents");
+                }
+            } else {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to access this document");
+            }
+        }
 
         String storageKey = document.getS3Key() == null || document.getS3Key().isBlank()
                 ? document.getFileUrl()
