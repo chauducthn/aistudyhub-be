@@ -7,6 +7,7 @@ public record SubjectResponse(
         Long id,
         Long userId,
         String name,
+        Long documentCount,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -16,6 +17,18 @@ public record SubjectResponse(
                 subject.getId(),
                 subject.getUser().getId(),
                 subject.getName(),
+                0L,
+                subject.getCreatedAt(),
+                subject.getUpdatedAt()
+        );
+    }
+
+    public static SubjectResponse from(Subject subject, Long documentCount) {
+        return new SubjectResponse(
+                subject.getId(),
+                subject.getUser().getId(),
+                subject.getName(),
+                documentCount,
                 subject.getCreatedAt(),
                 subject.getUpdatedAt()
         );

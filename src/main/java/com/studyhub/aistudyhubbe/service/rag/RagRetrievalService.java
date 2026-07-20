@@ -5,10 +5,7 @@ import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentChunk;
 import com.studyhub.aistudyhubbe.entity.DocumentExtractionStatus;
 import com.studyhub.aistudyhubbe.repository.DocumentChunkRepository;
-import java.util.Comparator;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -16,30 +13,18 @@ import org.springframework.util.StringUtils;
 @Service
 public class RagRetrievalService {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(RagRetrievalService.class);
-    private static final double MIN_EMBEDDING_SCORE = 0.15D;
-
     private final RagProperties ragProperties;
     private final DocumentChunkRepository documentChunkRepository;
-    private final GeminiEmbeddingClient geminiEmbeddingClient;
-    private final ChunkEmbeddingCodec chunkEmbeddingCodec;
-    private final CosineSimilarity cosineSimilarity;
     private final KeywordChunkRanker keywordChunkRanker;
     private final TextChunkingService textChunkingService;
 
     public RagRetrievalService(
             RagProperties ragProperties,
             DocumentChunkRepository documentChunkRepository,
-            GeminiEmbeddingClient geminiEmbeddingClient,
-            ChunkEmbeddingCodec chunkEmbeddingCodec,
-            CosineSimilarity cosineSimilarity,
             KeywordChunkRanker keywordChunkRanker,
             TextChunkingService textChunkingService) {
         this.ragProperties = ragProperties;
         this.documentChunkRepository = documentChunkRepository;
-        this.geminiEmbeddingClient = geminiEmbeddingClient;
-        this.chunkEmbeddingCodec = chunkEmbeddingCodec;
-        this.cosineSimilarity = cosineSimilarity;
         this.keywordChunkRanker = keywordChunkRanker;
         this.textChunkingService = textChunkingService;
     }
@@ -83,27 +68,6 @@ public class RagRetrievalService {
     }
 
     private List<String> rankStoredChunks(List<DocumentChunk> storedChunks, String userQuery) {
-        boolean hasEmbeddings = storedChunks.stream().anyMatch(chunk -> StringUtils.hasText(chunk.getEmbedding()));
-        if (hasEmbeddings && geminiEmbeddingClient.isConfigured()) {
-            try {
-                float[] queryVector = geminiEmbeddingClient.embedQuestion(userQuery);
-                List<String> semanticMatches = storedChunks.stream()
-                        .filter(chunk -> StringUtils.hasText(chunk.getEmbedding()))
-                        .map(chunk -> new ScoredChunk(
-                                chunk.getContent(),
-                                cosineSimilarity.score(queryVector, chunkEmbeddingCodec.decode(chunk.getEmbedding()))))
-                        .filter(chunk -> chunk.score() >= MIN_EMBEDDING_SCORE)
-                        .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
-                        .limit(ragProperties.getTopK())
-                        .map(ScoredChunk::content)
-                        .toList();
-                if (!semanticMatches.isEmpty()) {
-                    return semanticMatches;
-                }
-            } catch (RuntimeException ex) {
-                LOGGER.warn("Embedding retrieval failed. Falling back to keyword retrieval: {}", ex.getMessage());
-            }
-        }
         return rankTextChunks(storedChunks.stream().map(DocumentChunk::getContent).toList(), userQuery);
     }
 
@@ -153,8 +117,5 @@ public class RagRetrievalService {
                 .distinct()
                 .mapToObj(chunks::get)
                 .toList();
-    }
-
-    private record ScoredChunk(String content, double score) {
     }
 }

@@ -6,6 +6,7 @@ import com.studyhub.aistudyhubbe.dto.ChatSessionResponse;
 import com.studyhub.aistudyhubbe.entity.ChatSession;
 import com.studyhub.aistudyhubbe.repository.ChatSessionRepository;
 import java.util.List;
+import java.util.Collections;
 import com.studyhub.aistudyhubbe.dto.PageResponse;
 import com.studyhub.aistudyhubbe.entity.ChatMessage;
 import com.studyhub.aistudyhubbe.entity.Document;
@@ -72,7 +73,8 @@ public class ChatbotService {
         chatMessage.setChatSession(chatSession);
         chatMessage.setPrompt(prompt);
 
-        StudyAiResponse aiResponse = chatbotAiResponder.generate(prompt, document);
+        String conversationHistory = buildConversationHistory(userId, chatSession.getId());
+        StudyAiResponse aiResponse = chatbotAiResponder.generate(prompt, document, conversationHistory);
         chatMessage.setResponse(aiResponse.response());
         chatMessage.setModel(aiResponse.model());
 
@@ -141,5 +143,33 @@ public class ChatbotService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Chat message is required");
         }
         return prompt.trim();
+    }
+
+    private String buildConversationHistory(Long userId, Long sessionId) {
+        List<ChatMessage> recentMessages = chatMessageRepository
+                .findTop4ByUserIdAndChatSessionIdAndVisibleToUserTrueOrderByCreatedAtDesc(userId, sessionId);
+        if (recentMessages.isEmpty()) {
+            return "No previous conversation.";
+        }
+
+        Collections.reverse(recentMessages);
+        StringBuilder history = new StringBuilder();
+        for (ChatMessage message : recentMessages) {
+            appendHistoryLine(history, "User", message.getPrompt());
+            appendHistoryLine(history, "Assistant", message.getResponse());
+        }
+        return history.toString();
+    }
+
+    private void appendHistoryLine(StringBuilder history, String role, String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        String normalized = content.replaceAll("\\s+", " ").trim();
+        int maxLength = 2_500;
+        if (normalized.length() > maxLength) {
+            normalized = normalized.substring(0, maxLength) + "…";
+        }
+        history.append(role).append(": ").append(normalized).append(System.lineSeparator());
     }
 }

@@ -12,24 +12,19 @@ import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.Subject;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.exception.ApiException;
-import java.time.Instant;
+import com.studyhub.aistudyhubbe.entity.Role;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
+import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.DownloadedDocumentFile;
-import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
-import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import com.studyhub.aistudyhubbe.service.rag.DocumentIndexRequestedEvent;
 import java.util.List;
-import java.util.Locale;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -40,7 +35,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class DocumentService {
 
-    private static final List<DocumentStatus> EXCLUDED_NORMAL_STATUSES = List.of(
+    public static final List<DocumentStatus> EXCLUDED_NORMAL_STATUSES = List.of(
             DocumentStatus.DELETED,
             DocumentStatus.REMOVED,
             DocumentStatus.LOCKED
@@ -49,32 +44,30 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final SubjectRepository subjectRepository;
+    private final ReportRepository reportRepository;
     private final DocumentStorageService documentStorageService;
-    private final DocumentTextExtractionService documentTextExtractionService;
-    private final DocumentChunkIndexer documentChunkIndexer;
-    private final ChatbotAiResponder chatbotAiResponder;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DocumentService(
             DocumentRepository documentRepository,
             UserRepository userRepository,
             SubjectRepository subjectRepository,
+            ReportRepository reportRepository,
             DocumentStorageService documentStorageService,
-            DocumentTextExtractionService documentTextExtractionService,
-            DocumentChunkIndexer documentChunkIndexer,
-            ChatbotAiResponder chatbotAiResponder) {
+            ApplicationEventPublisher eventPublisher) {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
+        this.reportRepository = reportRepository;
         this.documentStorageService = documentStorageService;
-        this.documentTextExtractionService = documentTextExtractionService;
-        this.documentChunkIndexer = documentChunkIndexer;
-        this.chatbotAiResponder = chatbotAiResponder;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public DocumentResponse uploadDocument(
             Long userId,
@@ -98,17 +91,18 @@ public class DocumentService {
         document.setFileUrl(storedFile.fileUrl());
         document.setOriginalFilename(storedFile.originalFilename());
         document.setStatus(DocumentStatus.PRIVATE);
-        applyExtractionResult(document, storedFile, file);
+        document.setExtractionStatus(DocumentExtractionStatus.PENDING);
 
         Document saved = documentRepository.save(document);
-        documentChunkIndexer.indexDocument(saved);
+        eventPublisher.publishEvent(new DocumentIndexRequestedEvent(saved.getId()));
         return DocumentResponse.from(saved);
     }
 
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public List<DocumentResponse> uploadDocuments(
             Long userId,
@@ -150,10 +144,10 @@ public class DocumentService {
             document.setFileUrl(storedFile.fileUrl());
             document.setOriginalFilename(storedFile.originalFilename());
             document.setStatus(DocumentStatus.PRIVATE);
-            applyExtractionResult(document, storedFile, file);
+            document.setExtractionStatus(DocumentExtractionStatus.PENDING);
 
             Document saved = documentRepository.save(document);
-            documentChunkIndexer.indexDocument(saved);
+            eventPublisher.publishEvent(new DocumentIndexRequestedEvent(saved.getId()));
             responses.add(DocumentResponse.from(saved));
         }
 
@@ -216,7 +210,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public DocumentResponse updateDocument(Long userId, Long documentId, DocumentUpdateRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
@@ -239,7 +234,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public DocumentResponse updateDocumentSubject(Long userId, Long documentId, DocumentSubjectRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
@@ -254,6 +250,11 @@ public class DocumentService {
     })
     public DocumentResponse updateVisibility(Long userId, Long documentId, DocumentVisibilityRequest request) {
         Document document = findOwnedVisibleDocument(userId, documentId);
+
+        if (document.getStatus() == DocumentStatus.HIDDEN || document.getStatus() == DocumentStatus.LOCKED) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This document has been moderated and its visibility cannot be changed");
+        }
+
         DocumentStatus status = request.status();
 
         if (status != DocumentStatus.PUBLIC && status != DocumentStatus.PRIVATE) {
@@ -271,7 +272,22 @@ public class DocumentService {
                         userId,
                         DocumentStatus.PUBLIC,
                         EXCLUDED_NORMAL_STATUSES)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+                .orElse(null);
+
+        if (document == null) {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "User not found"));
+            if (user.getRole() == Role.ADMIN) {
+                document = documentRepository.findById(documentId)
+                        .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+                boolean isReported = reportRepository.existsByDocumentId(documentId);
+                if (!isReported) {
+                    throw new ApiException(HttpStatus.FORBIDDEN, "Admin can only view reported documents");
+                }
+            } else {
+                throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to access this document");
+            }
+        }
 
         String storageKey = document.getS3Key() == null || document.getS3Key().isBlank()
                 ? document.getFileUrl()
@@ -291,7 +307,8 @@ public class DocumentService {
     @Transactional
     @Caching(evict = {
             @CacheEvict(value = CacheNames.PUBLIC_DOCUMENTS, allEntries = true),
-            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true)
+            @CacheEvict(value = CacheNames.ADMIN_DASHBOARD, allEntries = true),
+            @CacheEvict(value = CacheNames.USER_SUBJECTS, key = "#userId")
     })
     public void deleteDocument(Long userId, Long documentId) {
         Document document = findOwnedVisibleDocument(userId, documentId);
@@ -350,68 +367,6 @@ public class DocumentService {
             return null;
         }
         return keyword.trim();
-    }
-
-    private void applyExtractionResult(Document document, StoredDocumentFile storedFile, MultipartFile file) {
-        Path tempPath = null;
-        try {
-            tempPath = Files.createTempFile(
-                    "aistudyhub-doc-upload-",
-                    "." + storedFile.fileType().toLowerCase(Locale.ROOT));
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, tempPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-            ExtractionResult extraction = documentTextExtractionService.extract(tempPath, storedFile.fileType());
-            document.setExtractionStatus(extraction.status());
-            document.setExtractedText(extraction.text());
-            document.setExtractionError(extraction.error());
-            document.setExtractedAt(extraction.extractedAt());
-        } catch (IOException ex) {
-            document.setExtractionStatus(DocumentExtractionStatus.FAILED);
-            document.setExtractionError("Could not prepare document for text extraction");
-        } finally {
-            if (tempPath != null) {
-                try {
-                    Files.deleteIfExists(tempPath);
-                } catch (IOException ignored) {}
-            }
-        }
-    }
-
-    @Transactional
-    public DocumentResponse checkPlagiarism(Long userId, Long documentId) {
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
-
-        if (!document.getUser().getId().equals(userId) && document.getStatus() != DocumentStatus.PUBLIC) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to access this document");
-        }
-
-        String text = document.getExtractedText();
-        if (text == null || text.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Document text is not extracted. Cannot perform plagiarism check.");
-        }
-
-        String sampleText = text.substring(0, Math.min(text.length(), 6000));
-        String prompt = """
-                Analyze the following document for potential plagiarism by comparing it with your training data and public knowledge on the Internet.
-                Identify:
-                1. Plagiarism Score (0-100%).
-                2. Potential source links or publications names that match closely.
-                3. Specific sentences or paragraphs that appear to be copied or paraphrased from external sources.
-                4. An overall analysis of the document's originality and integrity.
-
-                Output the report as structured, clean Markdown. Do not repeat this instruction.
-
-                Document Content:
-                %s
-                """.formatted(sampleText);
-
-        ChatbotAiResponder.StudyAiResponse reportResponse = chatbotAiResponder.generate(prompt, null);
-        document.setPlagiarismReport(reportResponse.response());
-        document.setPlagiarismCheckedAt(Instant.now());
-
-        return DocumentResponse.from(documentRepository.save(document));
     }
 
     public record DocumentDownloadFile(

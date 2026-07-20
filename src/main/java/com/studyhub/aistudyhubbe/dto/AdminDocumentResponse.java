@@ -20,6 +20,7 @@ public record AdminDocumentResponse(
         String fileUrl,
         String originalFilename,
         DocumentStatus status,
+        String extractedText,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -41,6 +42,7 @@ public record AdminDocumentResponse(
                 document.getFileUrl(),
                 document.getOriginalFilename(),
                 document.getStatus(),
+                document.getExtractedText(),
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );

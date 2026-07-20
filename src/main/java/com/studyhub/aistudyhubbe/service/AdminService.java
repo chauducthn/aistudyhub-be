@@ -16,6 +16,7 @@ import com.studyhub.aistudyhubbe.repository.PasswordResetTokenRepository;
 import com.studyhub.aistudyhubbe.repository.RefreshTokenRepository;
 import com.studyhub.aistudyhubbe.repository.ReportRepository;
 import com.studyhub.aistudyhubbe.repository.ChatMessageRepository;
+import com.studyhub.aistudyhubbe.repository.ChatSessionRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import org.springframework.cache.annotation.CacheEvict;
@@ -38,6 +39,7 @@ public class AdminService {
     private final SubjectRepository subjectRepository;
     private final ReportRepository reportRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final ChatSessionRepository chatSessionRepository;
     private final DocumentChunkRepository documentChunkRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
@@ -50,6 +52,7 @@ public class AdminService {
             SubjectRepository subjectRepository,
             ReportRepository reportRepository,
             ChatMessageRepository chatMessageRepository,
+            ChatSessionRepository chatSessionRepository,
             DocumentChunkRepository documentChunkRepository,
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordEncoder passwordEncoder,
@@ -60,6 +63,7 @@ public class AdminService {
         this.subjectRepository = subjectRepository;
         this.reportRepository = reportRepository;
         this.chatMessageRepository = chatMessageRepository;
+        this.chatSessionRepository = chatSessionRepository;
         this.documentChunkRepository = documentChunkRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
@@ -143,6 +147,7 @@ public class AdminService {
     public void deleteDocument(Long documentId) {
         Document document = documentRepository.findAdminDetailById(documentId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        chatMessageRepository.nullifyDocumentId(document.getId());
         reportRepository.deleteByDocumentId(document.getId());
         documentChunkRepository.deleteByDocumentId(document.getId());
         documentRepository.delete(document);
@@ -199,7 +204,9 @@ public class AdminService {
         User user = getUserOrThrow(userId);
 
         reportRepository.deleteByUserInvolvement(user.getId());
+        chatMessageRepository.nullifyDocumentIdByUserId(user.getId());
         chatMessageRepository.deleteByUserId(user.getId());
+        chatSessionRepository.deleteByUserId(user.getId());
         documentChunkRepository.deleteByUserId(user.getId());
         documentRepository.deleteByUserId(user.getId());
         subjectRepository.deleteByUserId(user.getId());

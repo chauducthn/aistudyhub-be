@@ -22,8 +22,7 @@ public record DocumentResponse(
         DocumentExtractionStatus extractionStatus,
         String extractionError,
         Instant extractedAt,
-        String plagiarismReport,
-        Instant plagiarismCheckedAt,
+        String extractedText,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -46,8 +45,7 @@ public record DocumentResponse(
                 document.getExtractionStatus(),
                 document.getExtractionError(),
                 document.getExtractedAt(),
-                document.getPlagiarismReport(),
-                document.getPlagiarismCheckedAt(),
+                document.getExtractedText(),
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );
@@ -71,8 +69,7 @@ public record DocumentResponse(
                 document.getExtractionStatus(),
                 document.getExtractionError(),
                 document.getExtractedAt(),
-                document.getPlagiarismReport(),
-                document.getPlagiarismCheckedAt(),
+                document.getExtractedText(),
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );

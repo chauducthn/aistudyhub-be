@@ -186,6 +186,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     long countBySubjectId(Long subjectId);
 
+    long countBySubjectIdAndStatusNotIn(Long subjectId, Collection<DocumentStatus> excludedStatuses);
+
     @Query("""
             select d.status as status, count(d) as total
             from Document d

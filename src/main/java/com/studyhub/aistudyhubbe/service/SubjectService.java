@@ -49,7 +49,7 @@ public class SubjectService {
     @Cacheable(value = CacheNames.USER_SUBJECTS, key = "#userId")
     public List<SubjectResponse> listSubjects(Long userId) {
         return subjectRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
-                .map(SubjectResponse::from)
+                .map(s -> SubjectResponse.from(s, documentRepository.countBySubjectIdAndStatusNotIn(s.getId(), DocumentService.EXCLUDED_NORMAL_STATUSES)))
                 .toList();
     }
 
@@ -65,7 +65,8 @@ public class SubjectService {
         }
 
         subject.setName(name);
-        return SubjectResponse.from(subjectRepository.save(subject));
+        Subject saved = subjectRepository.save(subject);
+        return SubjectResponse.from(saved, documentRepository.countBySubjectIdAndStatusNotIn(saved.getId(), DocumentService.EXCLUDED_NORMAL_STATUSES));
     }
 
     @Transactional

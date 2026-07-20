@@ -9,13 +9,14 @@ import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
-import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
+import com.studyhub.aistudyhubbe.service.rag.DocumentIndexRequestedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -33,8 +34,7 @@ class DocumentServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private SubjectRepository subjectRepository;
     @Mock private DocumentStorageService documentStorageService;
-    @Mock private DocumentTextExtractionService documentTextExtractionService;
-    @Mock private DocumentChunkIndexer documentChunkIndexer;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private DocumentService documentService;
@@ -69,8 +69,6 @@ class DocumentServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(testUser));
         // No subject provided
         when(documentStorageService.storeDocument(eq(1L), any())).thenReturn(storedFile);
-        when(documentTextExtractionService.extract(any(), eq("PDF")))
-                .thenReturn(DocumentTextExtractionService.ExtractionResult.extracted("dummy content"));
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
             Document doc = invocation.getArgument(0);
             doc.setId(10L); // mock auto-generated ID
@@ -84,6 +82,7 @@ class DocumentServiceTest {
         assertEquals("My PDF", response.title());
         assertEquals("PDF", response.fileType());
         verify(documentRepository).save(any(Document.class));
+        verify(eventPublisher).publishEvent(any(DocumentIndexRequestedEvent.class));
     }
 
     @Test
