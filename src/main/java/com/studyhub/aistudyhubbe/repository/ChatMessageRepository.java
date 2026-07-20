@@ -1,6 +1,7 @@
 package com.studyhub.aistudyhubbe.repository;
 
 import com.studyhub.aistudyhubbe.entity.ChatMessage;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +14,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     Page<ChatMessage> findByUserIdAndVisibleToUserTrue(Long userId, Pageable pageable);
 
     Page<ChatMessage> findByUserIdAndChatSessionIdAndVisibleToUserTrue(Long userId, Long sessionId, Pageable pageable);
+
+    List<ChatMessage> findTop4ByUserIdAndChatSessionIdAndVisibleToUserTrueOrderByCreatedAtDesc(
+            Long userId,
+            Long sessionId);
 
     @Modifying
     @Query("update ChatMessage c set c.visibleToUser = false where c.user.id = :userId")

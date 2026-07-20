@@ -12,7 +12,6 @@ import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.Subject;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.exception.ApiException;
-import java.time.Instant;
 import com.studyhub.aistudyhubbe.entity.Role;
 import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.ReportRepository;
@@ -20,27 +19,17 @@ import com.studyhub.aistudyhubbe.repository.SubjectRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.StoredDocumentFile;
 import com.studyhub.aistudyhubbe.service.DocumentStorageService.DownloadedDocumentFile;
-import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService.ExtractionResult;
-import com.studyhub.aistudyhubbe.service.rag.DocumentChunkIndexer;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import com.studyhub.aistudyhubbe.service.rag.DocumentIndexRequestedEvent;
 import java.util.List;
-import java.util.Locale;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -57,11 +46,7 @@ public class DocumentService {
     private final SubjectRepository subjectRepository;
     private final ReportRepository reportRepository;
     private final DocumentStorageService documentStorageService;
-    private final DocumentTextExtractionService documentTextExtractionService;
-    private final DocumentChunkIndexer documentChunkIndexer;
-    private final ChatbotAiResponder chatbotAiResponder;
-    private final PlatformTransactionManager transactionManager;
-    private final ExecutorService executorService = Executors.newFixedThreadPool(4);
+    private final ApplicationEventPublisher eventPublisher;
 
     public DocumentService(
             DocumentRepository documentRepository,
@@ -69,19 +54,13 @@ public class DocumentService {
             SubjectRepository subjectRepository,
             ReportRepository reportRepository,
             DocumentStorageService documentStorageService,
-            DocumentTextExtractionService documentTextExtractionService,
-            DocumentChunkIndexer documentChunkIndexer,
-            ChatbotAiResponder chatbotAiResponder,
-            PlatformTransactionManager transactionManager) {
+            ApplicationEventPublisher eventPublisher) {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
         this.reportRepository = reportRepository;
         this.documentStorageService = documentStorageService;
-        this.documentTextExtractionService = documentTextExtractionService;
-        this.documentChunkIndexer = documentChunkIndexer;
-        this.chatbotAiResponder = chatbotAiResponder;
-        this.transactionManager = transactionManager;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -115,7 +94,7 @@ public class DocumentService {
         document.setExtractionStatus(DocumentExtractionStatus.PENDING);
 
         Document saved = documentRepository.save(document);
-        triggerAsyncProcessing(saved.getId());
+        eventPublisher.publishEvent(new DocumentIndexRequestedEvent(saved.getId()));
         return DocumentResponse.from(saved);
     }
 
@@ -168,7 +147,7 @@ public class DocumentService {
             document.setExtractionStatus(DocumentExtractionStatus.PENDING);
 
             Document saved = documentRepository.save(document);
-            triggerAsyncProcessing(saved.getId());
+            eventPublisher.publishEvent(new DocumentIndexRequestedEvent(saved.getId()));
             responses.add(DocumentResponse.from(saved));
         }
 
@@ -388,114 +367,6 @@ public class DocumentService {
             return null;
         }
         return keyword.trim();
-    }
-
-    private void applyExtractionResult(Document document, StoredDocumentFile storedFile, MultipartFile file) {
-        Path tempPath = null;
-        try {
-            tempPath = Files.createTempFile(
-                    "aistudyhub-doc-upload-",
-                    "." + storedFile.fileType().toLowerCase(Locale.ROOT));
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, tempPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-            ExtractionResult extraction = documentTextExtractionService.extract(tempPath, storedFile.fileType());
-            document.setExtractionStatus(extraction.status());
-            document.setExtractedText(extraction.text());
-            document.setExtractionError(extraction.error());
-            document.setExtractedAt(extraction.extractedAt());
-        } catch (IOException ex) {
-            document.setExtractionStatus(DocumentExtractionStatus.FAILED);
-            document.setExtractionError("Could not prepare document for text extraction");
-        } finally {
-            if (tempPath != null) {
-                try {
-                    Files.deleteIfExists(tempPath);
-                } catch (IOException ignored) {}
-            }
-        }
-    }
-
-    @Transactional
-    public DocumentResponse checkPlagiarism(Long userId, Long documentId) {
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
-
-        if (!document.getUser().getId().equals(userId) && document.getStatus() != DocumentStatus.PUBLIC) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to access this document");
-        }
-
-        String text = document.getExtractedText();
-        if (text == null || text.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Document text is not extracted. Cannot perform plagiarism check.");
-        }
-
-        String sampleText = text.substring(0, Math.min(text.length(), 6000));
-        String prompt = """
-                Analyze the following document for potential plagiarism by comparing it with your training data and public knowledge on the Internet.
-                Identify:
-                1. Plagiarism Score (0-100%).
-                2. Potential source links or publications names that match closely.
-                3. Specific sentences or paragraphs that appear to be copied or paraphrased from external sources.
-                4. An overall analysis of the document's originality and integrity.
-
-                Output the report as structured, clean Markdown. Do not repeat this instruction.
-
-                Document Content:
-                %s
-                """.formatted(sampleText);
-
-        ChatbotAiResponder.StudyAiResponse reportResponse = chatbotAiResponder.generate(prompt, null);
-        document.setPlagiarismReport(reportResponse.response());
-        document.setPlagiarismCheckedAt(Instant.now());
-
-        return DocumentResponse.from(documentRepository.save(document));
-    }
-
-    private void triggerAsyncProcessing(Long documentId) {
-        executorService.submit(() -> {
-            try {
-                TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-                transactionTemplate.execute(status -> {
-                    Document document = documentRepository.findById(documentId).orElse(null);
-                    if (document == null) return null;
-
-                    Path tempPath = null;
-                    try {
-                        String storageKey = document.getS3Key() == null || document.getS3Key().isBlank()
-                                ? document.getFileUrl()
-                                : document.getS3Key();
-                        DownloadedDocumentFile downloadedFile = documentStorageService.downloadDocumentFile(storageKey);
-                        
-                        tempPath = Files.createTempFile(
-                                "aistudyhub-doc-async-",
-                                "." + document.getFileType().toLowerCase(Locale.ROOT));
-                        
-                        Files.write(tempPath, downloadedFile.bytes());
-                        ExtractionResult extraction = documentTextExtractionService.extract(tempPath, document.getFileType());
-                        document.setExtractionStatus(extraction.status());
-                        document.setExtractedText(extraction.text());
-                        document.setExtractionError(extraction.error());
-                        document.setExtractedAt(extraction.extractedAt());
-                    } catch (Exception ex) {
-                        document.setExtractionStatus(DocumentExtractionStatus.FAILED);
-                        document.setExtractionError("Async text extraction failed: " + ex.getMessage());
-                    } finally {
-                        if (tempPath != null) {
-                            try {
-                                Files.deleteIfExists(tempPath);
-                            } catch (IOException ignored) {}
-                        }
-                    }
-
-                    Document saved = documentRepository.save(document);
-                    documentChunkIndexer.indexDocument(saved);
-                    return null;
-                });
-            } catch (Exception e) {
-                System.err.println("Async processing error for document " + documentId + ": " + e.getMessage());
-            }
-        });
     }
 
     public record DocumentDownloadFile(

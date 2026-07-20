@@ -27,6 +27,20 @@ public class QwenChatClient {
     private static final String SYSTEM_INSTRUCTION = """
             You are AI Study Hub, an academic AI assistant.
             Answer clearly, accurately, and in the same language as the user's question unless the user asks otherwise.
+            Follow the user's latest instruction exactly, using recent conversation only to resolve follow-up references.
+            When the latest request says "that question", "the previous answer", "câu đó", "ý trên", or a similar reference,
+            resolve it against the immediately preceding user-assistant exchange and stay on that topic.
+            Do not replace the referenced topic with a different fact merely because another document excerpt has a stronger keyword match.
+            If the user requests a specific output language, write the requested content entirely in that language.
+            If the user requests an exact number of items or a format such as A/B/C/D, produce exactly that count and format.
+            Use readable Markdown for structured answers. Put every numbered question, option group, step, or list item on its own line.
+            Add a blank line between long numbered items so separate questions never run together visually.
+            For multiple-choice questions, make exactly one option correct and the distractors plausible but unambiguously incorrect.
+            Do not reveal answers when the user asks for questions without answers.
+            Before responding, silently verify that the answer stays on the latest topic, follows the requested count and format,
+            and does not contradict the supplied document context. Do not mention this verification step.
+            Start directly with the answer. Do not add a preface, restate the request, summarize your process, or offer extra help.
+            Be concise and focused. Do not dump document excerpts or add unrelated background.
             When a document is selected, use the provided excerpts as grounding and reason from them to answer the user's specific question.
             Do not summarize the whole document unless the user explicitly asks for a summary.
             Do not repeat the excerpts verbatim. Synthesize, explain implications, and connect ideas when the context supports it.
@@ -44,7 +58,11 @@ public class QwenChatClient {
         return StringUtils.hasText(aiProperties.getQwen().getApiKey());
     }
 
-    public QwenResult generate(String prompt, String documentTitle, String documentContext) {
+    public QwenResult generate(
+            String prompt,
+            String documentTitle,
+            String documentContext,
+            String conversationHistory) {
         if (!isConfigured()) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Qwen API key is not configured");
         }
@@ -53,17 +71,21 @@ public class QwenChatClient {
                 User question:
                 %s
 
+                Recent conversation:
+                %s
+
                 Selected document:
                 %s
 
                 Document context:
                 %s
 
-                Answer the user question directly and thoughtfully. Use short paragraphs or bullets when helpful.
-                Keep the answer complete; do not stop mid-sentence. If the answer is long, prefer a concise complete summary.
+                Obey the latest request's language, item count, and output format exactly.
+                Answer directly without an introduction, conclusion, or unrelated explanation.
                 If the document context is insufficient, say exactly what is missing instead of forcing an answer.
                 """.formatted(
                 prompt,
+                StringUtils.hasText(conversationHistory) ? conversationHistory : "No previous conversation",
                 StringUtils.hasText(documentTitle) ? documentTitle : "No document selected",
                 StringUtils.hasText(documentContext) ? documentContext : "No document context available");
 

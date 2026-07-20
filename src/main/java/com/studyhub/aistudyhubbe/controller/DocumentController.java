@@ -180,16 +180,6 @@ public class DocumentController {
                 .body(new ByteArrayResource(file.bytes()));
     }
 
-    @Operation(summary = "Perform plagiarism check on a document using AI comparing with Internet data")
-    @PostMapping("/{id}/plagiarism-check")
-    public ApiResponse<DocumentResponse> checkPlagiarism(
-            @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable Long id) {
-        return ApiResponse.ok(
-                "Plagiarism check completed",
-                documentService.checkPlagiarism(requireUserId(principal), id));
-    }
-
     @Operation(summary = "Soft delete current user's document")
     @DeleteMapping("/{id}")
     public ApiResponse<Void> deleteDocument(
