@@ -37,6 +37,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -56,6 +60,8 @@ public class DocumentService {
     private final DocumentTextExtractionService documentTextExtractionService;
     private final DocumentChunkIndexer documentChunkIndexer;
     private final ChatbotAiResponder chatbotAiResponder;
+    private final PlatformTransactionManager transactionManager;
+    private final ExecutorService executorService = Executors.newFixedThreadPool(4);
 
     public DocumentService(
             DocumentRepository documentRepository,
@@ -65,7 +71,8 @@ public class DocumentService {
             DocumentStorageService documentStorageService,
             DocumentTextExtractionService documentTextExtractionService,
             DocumentChunkIndexer documentChunkIndexer,
-            ChatbotAiResponder chatbotAiResponder) {
+            ChatbotAiResponder chatbotAiResponder,
+            PlatformTransactionManager transactionManager) {
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
         this.subjectRepository = subjectRepository;
@@ -74,6 +81,7 @@ public class DocumentService {
         this.documentTextExtractionService = documentTextExtractionService;
         this.documentChunkIndexer = documentChunkIndexer;
         this.chatbotAiResponder = chatbotAiResponder;
+        this.transactionManager = transactionManager;
     }
 
     @Transactional
@@ -104,10 +112,10 @@ public class DocumentService {
         document.setFileUrl(storedFile.fileUrl());
         document.setOriginalFilename(storedFile.originalFilename());
         document.setStatus(DocumentStatus.PRIVATE);
-        applyExtractionResult(document, storedFile, file);
+        document.setExtractionStatus(DocumentExtractionStatus.PENDING);
 
         Document saved = documentRepository.save(document);
-        documentChunkIndexer.indexDocument(saved);
+        triggerAsyncProcessing(saved.getId());
         return DocumentResponse.from(saved);
     }
 
@@ -157,10 +165,10 @@ public class DocumentService {
             document.setFileUrl(storedFile.fileUrl());
             document.setOriginalFilename(storedFile.originalFilename());
             document.setStatus(DocumentStatus.PRIVATE);
-            applyExtractionResult(document, storedFile, file);
+            document.setExtractionStatus(DocumentExtractionStatus.PENDING);
 
             Document saved = documentRepository.save(document);
-            documentChunkIndexer.indexDocument(saved);
+            triggerAsyncProcessing(saved.getId());
             responses.add(DocumentResponse.from(saved));
         }
 
@@ -442,6 +450,52 @@ public class DocumentService {
         document.setPlagiarismCheckedAt(Instant.now());
 
         return DocumentResponse.from(documentRepository.save(document));
+    }
+
+    private void triggerAsyncProcessing(Long documentId) {
+        executorService.submit(() -> {
+            try {
+                TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+                transactionTemplate.execute(status -> {
+                    Document document = documentRepository.findById(documentId).orElse(null);
+                    if (document == null) return null;
+
+                    Path tempPath = null;
+                    try {
+                        String storageKey = document.getS3Key() == null || document.getS3Key().isBlank()
+                                ? document.getFileUrl()
+                                : document.getS3Key();
+                        DownloadedDocumentFile downloadedFile = documentStorageService.downloadDocumentFile(storageKey);
+                        
+                        tempPath = Files.createTempFile(
+                                "aistudyhub-doc-async-",
+                                "." + document.getFileType().toLowerCase(Locale.ROOT));
+                        
+                        Files.write(tempPath, downloadedFile.bytes());
+                        ExtractionResult extraction = documentTextExtractionService.extract(tempPath, document.getFileType());
+                        document.setExtractionStatus(extraction.status());
+                        document.setExtractedText(extraction.text());
+                        document.setExtractionError(extraction.error());
+                        document.setExtractedAt(extraction.extractedAt());
+                    } catch (Exception ex) {
+                        document.setExtractionStatus(DocumentExtractionStatus.FAILED);
+                        document.setExtractionError("Async text extraction failed: " + ex.getMessage());
+                    } finally {
+                        if (tempPath != null) {
+                            try {
+                                Files.deleteIfExists(tempPath);
+                            } catch (IOException ignored) {}
+                        }
+                    }
+
+                    Document saved = documentRepository.save(document);
+                    documentChunkIndexer.indexDocument(saved);
+                    return null;
+                });
+            } catch (Exception e) {
+                System.err.println("Async processing error for document " + documentId + ": " + e.getMessage());
+            }
+        });
     }
 
     public record DocumentDownloadFile(
