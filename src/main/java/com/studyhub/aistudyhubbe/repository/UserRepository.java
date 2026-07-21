@@ -1,5 +1,6 @@
 package com.studyhub.aistudyhubbe.repository;
 
+import com.studyhub.aistudyhubbe.entity.Role;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.entity.UserStatus;
 import java.time.Instant;
@@ -40,4 +41,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
                     """,
             nativeQuery = true)
     List<Object[]> countDailyRegistrations(@Param("startInstant") Instant startInstant);
+
+    @Query("""
+        SELECT u FROM User u
+        WHERE (:role IS NULL OR u.role = :role)
+          AND (:search IS NULL OR :search = '' OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')))
+    """)
+    Page<User> searchUsers(
+            @Param("search") String search,
+            @Param("role") Role role,
+            Pageable pageable);
 }

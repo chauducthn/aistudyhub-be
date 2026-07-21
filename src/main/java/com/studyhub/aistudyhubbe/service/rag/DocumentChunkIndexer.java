@@ -45,18 +45,35 @@ public class DocumentChunkIndexer {
 
         List<String> chunks = textChunkingService.chunk(document.getExtractedText());
         boolean canEmbed = geminiEmbeddingClient.isConfigured();
+        
+        List<DocumentChunk> chunkEntities = new java.util.ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
             DocumentChunk chunk = new DocumentChunk();
             chunk.setDocument(document);
             chunk.setChunkIndex(i);
             chunk.setContent(chunks.get(i));
-            if (canEmbed) {
-                try {
-                    chunk.setEmbedding(chunkEmbeddingCodec.encode(geminiEmbeddingClient.embedDocument(chunks.get(i))));
-                } catch (RuntimeException ex) {
-                    LOGGER.warn("Skipping embedding for document {} chunk {}: {}", document.getId(), i, ex.getMessage());
-                }
+            chunkEntities.add(chunk);
+        }
+
+        if (canEmbed && !chunkEntities.isEmpty()) {
+            java.util.concurrent.ForkJoinPool customThreadPool = new java.util.concurrent.ForkJoinPool(10);
+            try {
+                customThreadPool.submit(() -> chunkEntities.parallelStream().forEach(chunk -> {
+                    try {
+                        float[] vector = geminiEmbeddingClient.embedDocument(chunk.getContent());
+                        chunk.setEmbedding(chunkEmbeddingCodec.encode(vector));
+                    } catch (RuntimeException ex) {
+                        LOGGER.warn("Skipping embedding for document {} chunk {}: {}", document.getId(), chunk.getChunkIndex(), ex.getMessage());
+                    }
+                })).get();
+            } catch (Exception ex) {
+                LOGGER.error("Failed to generate embeddings in parallel for document {}: {}", document.getId(), ex.getMessage());
+            } finally {
+                customThreadPool.shutdown();
             }
+        }
+
+        for (DocumentChunk chunk : chunkEntities) {
             documentChunkRepository.save(chunk);
         }
     }
