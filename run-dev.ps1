@@ -1,4 +1,4 @@
-# Chay backend tu thu muc aistudyhub-be (doc .env + Railway MySQL)
+# Run backend from aistudyhub-be using .env.
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
@@ -19,7 +19,6 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
     }
 }
 
-Write-Host "Profile: $env:SPRING_PROFILES_ACTIVE"
 Write-Host "DB: $($env:DB_URL)"
 $port = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { '8081' }
 Write-Host "Starting Spring Boot on http://localhost:$port ..."

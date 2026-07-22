@@ -43,7 +43,7 @@ public class DocumentStorageService {
     public static final long MAX_DOCUMENT_SIZE_BYTES = 20L * 1024L * 1024L;
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-            "pdf", "doc", "docx", "ppt", "pptx", "txt", "rtf", "md", "xls", "xlsx", "csv", "odt", "ods", "odp"
+            "pdf", "doc", "docx", "ppt", "pptx", "txt", "rtf", "md", "xls", "xlsx", "csv"
     );
     private static final Map<String, String> EXPECTED_CONTENT_TYPES = Map.ofEntries(
             Map.entry("pdf", "application/pdf"),
@@ -56,10 +56,7 @@ public class DocumentStorageService {
             Map.entry("md", "text/markdown"),
             Map.entry("xls", "application/vnd.ms-excel"),
             Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-            Map.entry("csv", "text/csv"),
-            Map.entry("odt", "application/vnd.oasis.opendocument.text"),
-            Map.entry("ods", "application/vnd.oasis.opendocument.spreadsheet"),
-            Map.entry("odp", "application/vnd.oasis.opendocument.presentation")
+            Map.entry("csv", "text/csv")
     );
 
     private final S3Client s3Client;
@@ -182,7 +179,7 @@ public class DocumentStorageService {
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
-                    "Document must be a PDF, Word, PowerPoint, TXT, Markdown, Excel, CSV, or OpenDocument file");
+                    "Document must be a PDF, Word, PowerPoint, TXT, Markdown, Excel, or CSV file");
         }
 
         String contentType = file.getContentType();
@@ -226,7 +223,7 @@ public class DocumentStorageService {
             case "doc", "xls", "ppt" -> startsWith(header, new byte[] {
                     (byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1
             });
-            case "docx", "xlsx", "pptx", "odt", "ods", "odp" -> looksLikeZip(header)
+            case "docx", "xlsx", "pptx" -> looksLikeZip(header)
                     && zipStructureMatches(file, extension);
             case "rtf" -> startsWith(header, "{\\rtf".getBytes(StandardCharsets.US_ASCII));
             case "txt", "md", "csv" -> looksLikeText(header);
@@ -287,7 +284,6 @@ public class DocumentStorageService {
         try (ZipInputStream zipInputStream = new ZipInputStream(file.getInputStream())) {
             boolean hasContentTypes = false;
             boolean hasMainDocument = false;
-            boolean hasOdfMimeType = false;
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
                 String name = entry.getName();
@@ -297,15 +293,8 @@ public class DocumentStorageService {
                 if (matchesMainZipEntry(extension, name)) {
                     hasMainDocument = true;
                 }
-                if ("mimetype".equals(name) && odfMimeTypeMatches(extension, new String(zipInputStream.readAllBytes(), StandardCharsets.UTF_8))) {
-                    hasOdfMimeType = true;
-                }
             }
-            return switch (extension) {
-                case "docx", "xlsx", "pptx" -> hasContentTypes && hasMainDocument;
-                case "odt", "ods", "odp" -> hasOdfMimeType;
-                default -> false;
-            };
+            return hasContentTypes && hasMainDocument;
         } catch (IOException ex) {
             return false;
         }
@@ -316,15 +305,6 @@ public class DocumentStorageService {
             case "docx" -> "word/document.xml".equals(entryName);
             case "xlsx" -> "xl/workbook.xml".equals(entryName);
             case "pptx" -> "ppt/presentation.xml".equals(entryName);
-            default -> false;
-        };
-    }
-
-    private boolean odfMimeTypeMatches(String extension, String mimeType) {
-        return switch (extension) {
-            case "odt" -> "application/vnd.oasis.opendocument.text".equals(mimeType);
-            case "ods" -> "application/vnd.oasis.opendocument.spreadsheet".equals(mimeType);
-            case "odp" -> "application/vnd.oasis.opendocument.presentation".equals(mimeType);
             default -> false;
         };
     }

@@ -41,7 +41,7 @@ public class TestStorageConfig {
 
     private static final class LocalTestDocumentStorageService extends DocumentStorageService {
         private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-                "pdf", "doc", "docx", "ppt", "pptx", "txt", "rtf", "md", "xls", "xlsx", "csv", "odt", "ods", "odp"
+                "pdf", "doc", "docx", "ppt", "pptx", "txt", "rtf", "md", "xls", "xlsx", "csv"
         );
 
         private final Path documentRoot;
@@ -151,7 +151,7 @@ public class TestStorageConfig {
             if (!ALLOWED_EXTENSIONS.contains(extension)) {
                 throw new ApiException(
                         HttpStatus.BAD_REQUEST,
-                        "Document must be a PDF, Word, PowerPoint, TXT, Markdown, Excel, CSV, or OpenDocument file");
+                        "Document must be a PDF, Word, PowerPoint, TXT, Markdown, Excel, or CSV file");
             }
         }
     }

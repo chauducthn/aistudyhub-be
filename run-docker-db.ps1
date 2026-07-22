@@ -13,9 +13,9 @@ if (-not (Test-Path -LiteralPath $composeFile)) {
 }
 
 Write-Host "Starting local MySQL for StudyHubAI..."
-docker compose --env-file .env.docker.example up -d mysql
+docker compose --env-file .env up -d mysql
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Docker Compose failed to start MySQL. Check whether MYSQL_PORT in .env.docker.example is already in use."
+    Write-Error "Docker Compose failed to start MySQL. Check whether MYSQL_PORT in .env (or the default port 3306) is already in use."
 }
 
 Write-Host "Waiting for MySQL healthcheck..."
