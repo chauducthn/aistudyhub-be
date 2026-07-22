@@ -180,13 +180,13 @@ public class DocumentController {
                 .body(new ByteArrayResource(file.bytes()));
     }
 
-    @Operation(summary = "Soft delete current user's document")
+    @Operation(summary = "Remove current user's document")
     @DeleteMapping("/{id}")
     public ApiResponse<Void> deleteDocument(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long id) {
         documentService.deleteDocument(requireUserId(principal), id);
-        return ApiResponse.ok("Document deleted", null);
+        return ApiResponse.ok("Document removed", null);
     }
 
     private Long requireUserId(UserPrincipal principal) {

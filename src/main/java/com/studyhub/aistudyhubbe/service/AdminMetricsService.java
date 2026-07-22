@@ -124,7 +124,6 @@ public class AdminMetricsService {
                 hiddenDocuments,
                 lockedDocuments,
                 removedDocuments,
-                count(counts, DocumentStatus.DELETED),
                 hiddenDocuments + lockedDocuments + removedDocuments
         );
     }

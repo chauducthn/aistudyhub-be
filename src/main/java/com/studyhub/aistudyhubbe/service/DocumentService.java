@@ -36,7 +36,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class DocumentService {
 
     public static final List<DocumentStatus> EXCLUDED_NORMAL_STATUSES = List.of(
-            DocumentStatus.DELETED,
             DocumentStatus.REMOVED,
             DocumentStatus.LOCKED
     );
@@ -312,7 +311,7 @@ public class DocumentService {
     })
     public void deleteDocument(Long userId, Long documentId) {
         Document document = findOwnedVisibleDocument(userId, documentId);
-        document.setStatus(DocumentStatus.DELETED);
+        document.setStatus(DocumentStatus.REMOVED);
         documentRepository.save(document);
     }
 

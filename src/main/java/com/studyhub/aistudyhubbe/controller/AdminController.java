@@ -144,11 +144,11 @@ public class AdminController {
                 .build();
     }
 
-    @Operation(summary = "Delete a document for admin")
+    @Operation(summary = "Permanently remove a document for admin")
     @DeleteMapping("/documents/{documentId}")
     public ApiResponse<Void> deleteDocument(@PathVariable Long documentId) {
         adminService.deleteDocument(documentId);
-        return ApiResponse.ok("Document deleted", null);
+        return ApiResponse.ok("Document permanently removed", null);
     }
 
     @Operation(summary = "List document reports for admin review")

@@ -10,9 +10,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.studyhub.aistudyhubbe.entity.Role;
+import com.studyhub.aistudyhubbe.entity.DocumentExtractionStatus;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.entity.UserStatus;
+import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.repository.UserRepository;
+import com.studyhub.aistudyhubbe.service.QwenChatClient;
+import com.studyhub.aistudyhubbe.service.QwenChatClient.QwenResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,9 +26,13 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -39,10 +47,24 @@ class ChatbotControllerIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
+    private DocumentRepository documentRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @MockitoBean
+    private QwenChatClient qwenChatClient;
 
     @Test
     void userCanChatWithStudyAssistantAndMetricsTrackTotalCalls() throws Exception {
+        when(qwenChatClient.isConfigured()).thenReturn(true);
+        when(qwenChatClient.generate(any(), any(), any(), any())).thenAnswer(invocation -> {
+            String prompt = invocation.getArgument(0);
+            String context = invocation.getArgument(2);
+            String response = prompt + System.lineSeparator() + context;
+            return new QwenResult(response, "TEST_STUDY_ASSISTANT");
+        });
+
         String ownerToken = registerAndGetToken("chat-owner" + System.currentTimeMillis() + "@test.com");
         String viewerToken = registerAndGetToken("chat-viewer" + System.currentTimeMillis() + "@test.com");
         String adminToken = createAdminAndGetToken("chat-admin" + System.currentTimeMillis() + "@test.com");
@@ -53,7 +75,7 @@ class ChatbotControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"Summarize polymorphism\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.model").value("LOCAL_STUDY_ASSISTANT"))
+                .andExpect(jsonPath("$.data.model").value("TEST_STUDY_ASSISTANT"))
                 .andExpect(jsonPath("$.data.response").value(org.hamcrest.Matchers.containsString("polymorphism")));
 
         mockMvc.perform(post("/api/chatbot/messages")
@@ -131,7 +153,13 @@ class ChatbotControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        return JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        Integer documentId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        documentRepository.findById(documentId.longValue()).ifPresent(document -> {
+            document.setExtractedText(content);
+            document.setExtractionStatus(DocumentExtractionStatus.EXTRACTED);
+            documentRepository.saveAndFlush(document);
+        });
+        return documentId;
     }
 
     private String registerAndGetToken(String email) throws Exception {

@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 public class ChatbotDocumentAccess {
 
     private static final List<DocumentStatus> EXCLUDED_STATUSES = List.of(
-            DocumentStatus.DELETED,
             DocumentStatus.REMOVED,
             DocumentStatus.LOCKED
     );
