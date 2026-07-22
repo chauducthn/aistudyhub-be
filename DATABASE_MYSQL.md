@@ -1,6 +1,6 @@
 # MySQL setup
 
-Backend can run with either the default H2 in-memory database or a MySQL database.
+Backend uses MySQL for local development and deployment.
 
 ## Option A: Run MySQL with Docker
 
@@ -27,7 +27,7 @@ To run without changing your existing `.env`, use:
 .\run-dev-local-db.ps1
 ```
 
-Alternatively, copy the DB values from `.env.docker.example` into `.env`, then run:
+Alternatively, set the DB values directly in `.env`, then run:
 
 ```powershell
 .\run-dev.ps1
@@ -39,15 +39,15 @@ The container listens on MySQL port `3306` internally and is exposed on host por
 Useful commands:
 
 ```powershell
-docker compose --env-file .env.docker.example ps
-docker compose --env-file .env.docker.example logs -f mysql
-docker compose --env-file .env.docker.example down
+docker compose --env-file .env ps
+docker compose --env-file .env logs -f mysql
+docker compose --env-file .env down
 ```
 
 Only remove the volume when you intentionally want to delete the local database:
 
 ```powershell
-docker compose --env-file .env.docker.example down -v
+docker compose --env-file .env down -v
 ```
 
 ## Option B: Install MySQL directly
@@ -66,13 +66,12 @@ CREATE DATABASE IF NOT EXISTS aistudyhub
   COLLATE utf8mb4_unicode_ci;
 ```
 
-### Run backend with MySQL profile
+### Run backend with MySQL
 
 PowerShell:
 
 ```powershell
 cd D:\Code\StudyHubAI\BE\aistudyhub-be
-$env:SPRING_PROFILES_ACTIVE="mysql"
 $env:DB_URL="jdbc:mysql://127.0.0.1:3306/aistudyhub?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh"
 $env:DB_USERNAME="root"
 $env:DB_PASSWORD="your_mysql_password"
@@ -98,5 +97,4 @@ Later modules will add:
 ## Notes
 
 - Do not commit real database passwords or JWT secrets.
-- H2 remains the default profile for tests and quick local development.
 - If you already have a SQL Server `.sql` file, convert table types and syntax before importing to MySQL. For the current auth module, letting JPA create the schema is safer.

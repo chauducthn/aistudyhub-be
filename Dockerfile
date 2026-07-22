@@ -16,7 +16,6 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 ENV SERVER_PORT=8080 \
-    SPRING_PROFILES_ACTIVE=mysql \
     JAVA_OPTS=""
 
 RUN addgroup -S app \

@@ -5,17 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.ai")
 public class AiProperties {
 
-    private String provider = "qwen";
     private OpenAi openai = new OpenAi();
     private Qwen qwen = new Qwen();
-
-    public String getProvider() {
-        return provider;
-    }
-
-    public void setProvider(String provider) {
-        this.provider = provider;
-    }
+    private GeminiEmbedding geminiEmbedding = new GeminiEmbedding();
 
     public OpenAi getOpenai() {
         return openai;
@@ -31,6 +23,14 @@ public class AiProperties {
 
     public void setQwen(Qwen qwen) {
         this.qwen = qwen;
+    }
+
+    public GeminiEmbedding getGeminiEmbedding() {
+        return geminiEmbedding;
+    }
+
+    public void setGeminiEmbedding(GeminiEmbedding geminiEmbedding) {
+        this.geminiEmbedding = geminiEmbedding;
     }
 
     public static class OpenAi {
@@ -138,6 +138,37 @@ public class AiProperties {
 
         public void setMaxOutputTokens(int maxOutputTokens) {
             this.maxOutputTokens = maxOutputTokens;
+        }
+
+        public int getTimeoutSeconds() {
+            return timeoutSeconds;
+        }
+
+        public void setTimeoutSeconds(int timeoutSeconds) {
+            this.timeoutSeconds = timeoutSeconds;
+        }
+    }
+
+    public static class GeminiEmbedding {
+
+        private String apiKey = "";
+        private String baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+        private int timeoutSeconds = 30;
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
         }
 
         public int getTimeoutSeconds() {

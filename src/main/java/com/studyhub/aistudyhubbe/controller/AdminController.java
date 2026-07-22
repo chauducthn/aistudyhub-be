@@ -13,6 +13,7 @@ import com.studyhub.aistudyhubbe.dto.ResolveReportRequest;
 import com.studyhub.aistudyhubbe.dto.UpdateUserStatusRequest;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
 import com.studyhub.aistudyhubbe.entity.ReportStatus;
+import com.studyhub.aistudyhubbe.entity.Role;
 import com.studyhub.aistudyhubbe.security.UserPrincipal;
 import com.studyhub.aistudyhubbe.service.AdminMetricsService;
 import com.studyhub.aistudyhubbe.service.AdminService;
@@ -59,9 +60,10 @@ public class AdminController {
     @GetMapping("/users")
     public ApiResponse<PageResponse<AdminUserResponse>> listUsers(
             @RequestParam(defaultValue = "") String search,
+            @RequestParam(required = false) Role role,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.ok(adminService.listUsers(search, page, size));
+        return ApiResponse.ok(adminService.listUsers(search, role, page, size));
     }
 
     @Operation(summary = "Update a user account status")

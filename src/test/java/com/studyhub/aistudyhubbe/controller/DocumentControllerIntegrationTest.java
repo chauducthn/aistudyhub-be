@@ -33,6 +33,15 @@ class DocumentControllerIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
+    void unauthenticatedDocumentRequestReturnsUnauthorizedInsteadOfForbidden() throws Exception {
+        mockMvc.perform(get("/api/documents"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value(
+                        "Authentication is required or the access token has expired"));
+    }
+
+    @Test
     void userCanUploadListAndViewOwnDocument() throws Exception {
         String token = registerAndGetToken("document" + System.currentTimeMillis() + "@test.com");
         Integer subjectId = createSubject(token, "Software Engineering");
@@ -96,7 +105,7 @@ class DocumentControllerIntegrationTest {
     }
 
     @Test
-    void textDocumentUploadExtractsReadableText() throws Exception {
+    void textDocumentUploadQueuesAsynchronousExtraction() throws Exception {
         String token = registerAndGetToken("extract-document" + System.currentTimeMillis() + "@test.com");
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -105,13 +114,13 @@ class DocumentControllerIntegrationTest {
                 "Design patterns improve reusable software design.".getBytes());
 
         MvcResult uploadResult = mockMvc.perform(multipart("/api/documents")
-                        .file(file)
+                .file(file)
                         .param("title", "Extract Notes")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.extractionStatus").value("EXTRACTED"))
+                .andExpect(jsonPath("$.data.extractionStatus").value("PENDING"))
                 .andExpect(jsonPath("$.data.extractionError").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.data.extractedAt").exists())
+                .andExpect(jsonPath("$.data.extractedAt").value(org.hamcrest.Matchers.nullValue()))
                 .andReturn();
 
         Integer documentId = JsonPath.read(uploadResult.getResponse().getContentAsString(), "$.data.id");
@@ -119,7 +128,7 @@ class DocumentControllerIntegrationTest {
         mockMvc.perform(get("/api/documents/" + documentId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.extractionStatus").value("EXTRACTED"));
+                .andExpect(jsonPath("$.data.extractionStatus").value("PENDING"));
     }
 
     @Test
@@ -231,10 +240,10 @@ class DocumentControllerIntegrationTest {
                 .andExpect(content().string("secure content"));
 
         mockMvc.perform(get(fileUrl))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/documents/" + documentId + "/download"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

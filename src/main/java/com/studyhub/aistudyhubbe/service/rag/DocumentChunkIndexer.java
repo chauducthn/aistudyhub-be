@@ -23,16 +23,22 @@ public class DocumentChunkIndexer {
     private final DocumentChunkRepository documentChunkRepository;
     private final TextChunkingService textChunkingService;
     private final RagProperties ragProperties;
+    private final GeminiEmbeddingClient geminiEmbeddingClient;
+    private final ChunkEmbeddingCodec chunkEmbeddingCodec;
 
     public DocumentChunkIndexer(
             DocumentRepository documentRepository,
             DocumentChunkRepository documentChunkRepository,
             TextChunkingService textChunkingService,
-            RagProperties ragProperties) {
+            RagProperties ragProperties,
+            GeminiEmbeddingClient geminiEmbeddingClient,
+            ChunkEmbeddingCodec chunkEmbeddingCodec) {
         this.documentRepository = documentRepository;
         this.documentChunkRepository = documentChunkRepository;
         this.textChunkingService = textChunkingService;
         this.ragProperties = ragProperties;
+        this.geminiEmbeddingClient = geminiEmbeddingClient;
+        this.chunkEmbeddingCodec = chunkEmbeddingCodec;
     }
 
     @Transactional
@@ -64,6 +70,36 @@ public class DocumentChunkIndexer {
             chunk.setContent(chunks.get(i));
             entities.add(chunk);
         }
+
+        addEmbeddings(document, chunks, entities);
         documentChunkRepository.saveAll(entities);
+    }
+
+    private void addEmbeddings(Document document, List<String> chunks, List<DocumentChunk> entities) {
+        if (!geminiEmbeddingClient.isConfigured()) {
+            LOGGER.debug("Gemini embedding is not configured; indexing document {} with keyword-only chunks", document.getId());
+            return;
+        }
+
+        try {
+            List<float[]> embeddings = geminiEmbeddingClient.embedDocuments(chunks, document.getTitle());
+            if (embeddings.size() != entities.size()) {
+                LOGGER.warn(
+                        "Gemini returned {} embeddings for {} chunks in document {}; using keyword-only chunks",
+                        embeddings.size(),
+                        entities.size(),
+                        document.getId());
+                return;
+            }
+            for (int i = 0; i < entities.size(); i++) {
+                String encoded = chunkEmbeddingCodec.encode(embeddings.get(i));
+                entities.get(i).setEmbedding(encoded.isBlank() ? null : encoded);
+            }
+        } catch (RuntimeException ex) {
+            LOGGER.warn(
+                    "Could not create Gemini embeddings for document {}; chunks remain available for keyword retrieval: {}",
+                    document.getId(),
+                    ex.getMessage());
+        }
     }
 }

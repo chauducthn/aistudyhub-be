@@ -7,7 +7,6 @@ This backend deploys on Railway with the included `Dockerfile`. Railway should b
 Set these in Railway service variables:
 
 ```env
-SPRING_PROFILES_ACTIVE=mysql
 DB_URL=jdbc:mysql://${MYSQLHOST}:${MYSQLPORT}/${MYSQLDATABASE}?useSSL=true&requireSSL=true&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
 DB_USERNAME=${MYSQLUSER}
 DB_PASSWORD=${MYSQLPASSWORD}
@@ -18,11 +17,7 @@ ADMIN_PASSWORD=replace-with-a-strong-admin-password
 ADMIN_FULL_NAME=StudyHub Admin
 EXPOSE_RESET_TOKEN=false
 PASSWORD_RESET_FRONTEND_URL=https://your-frontend-domain/reset-password
-UPLOAD_STORAGE_ROOT=/app/uploads
-AVATAR_STORAGE_DIR=/app/uploads/avatars
 ```
-
-If avatar uploads must survive redeploys, attach a Railway volume and mount it at `/app/uploads`.
 
 ## Health check
 

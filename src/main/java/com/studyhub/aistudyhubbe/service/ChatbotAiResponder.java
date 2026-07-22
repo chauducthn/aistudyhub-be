@@ -6,9 +6,9 @@ import com.studyhub.aistudyhubbe.exception.ApiException;
 import com.studyhub.aistudyhubbe.service.QwenChatClient.QwenResult;
 import com.studyhub.aistudyhubbe.service.rag.ConversationAwareRetrievalQueryBuilder;
 import com.studyhub.aistudyhubbe.service.rag.RagRetrievalService;
+import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 @Service
 public class ChatbotAiResponder {
@@ -18,30 +18,31 @@ public class ChatbotAiResponder {
     private final AiProperties aiProperties;
     private final RagRetrievalService ragRetrievalService;
     private final ConversationAwareRetrievalQueryBuilder retrievalQueryBuilder;
+    private final ChatSafetyGuard chatSafetyGuard;
 
     public ChatbotAiResponder(
             OpenAiChatClient openAiChatClient,
             QwenChatClient qwenChatClient,
             AiProperties aiProperties,
             RagRetrievalService ragRetrievalService,
-            ConversationAwareRetrievalQueryBuilder retrievalQueryBuilder) {
+            ConversationAwareRetrievalQueryBuilder retrievalQueryBuilder,
+            ChatSafetyGuard chatSafetyGuard) {
         this.openAiChatClient = openAiChatClient;
         this.qwenChatClient = qwenChatClient;
         this.aiProperties = aiProperties;
         this.ragRetrievalService = ragRetrievalService;
         this.retrievalQueryBuilder = retrievalQueryBuilder;
+        this.chatSafetyGuard = chatSafetyGuard;
     }
 
     public StudyAiResponse generate(String prompt, Document document, String conversationHistory) {
+        Optional<String> guardedResponse = chatSafetyGuard.responseFor(prompt);
+        if (guardedResponse.isPresent()) {
+            return new StudyAiResponse(guardedResponse.get(), aiProperties.getQwen().getModel());
+        }
+
         String retrievalQuery = retrievalQueryBuilder.build(prompt, conversationHistory);
         String context = ragRetrievalService.buildContext(document, retrievalQuery);
-        String provider = normalizedProvider();
-
-        if (!"qwen".equals(provider)) {
-            throw new ApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Unsupported AI provider: %s. Only AI_PROVIDER=qwen is supported.".formatted(provider));
-        }
         if (!qwenChatClient.isConfigured()) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Qwen API key is not configured");
         }
@@ -51,14 +52,6 @@ public class ChatbotAiResponder {
                 context,
                 conversationHistory);
         return new StudyAiResponse(qwenResult.response(), qwenResult.model());
-    }
-
-    private String normalizedProvider() {
-        String provider = aiProperties.getProvider();
-        if (!StringUtils.hasText(provider)) {
-            return "qwen";
-        }
-        return provider.trim().toLowerCase();
     }
 
     public String performOcr(byte[] imageBytes) {

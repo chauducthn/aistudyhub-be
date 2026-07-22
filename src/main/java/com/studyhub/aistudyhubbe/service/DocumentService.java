@@ -285,7 +285,7 @@ public class DocumentService {
                     throw new ApiException(HttpStatus.FORBIDDEN, "Admin can only view reported documents");
                 }
             } else {
-                throw new ApiException(HttpStatus.FORBIDDEN, "You do not have permission to access this document");
+                throw new ApiException(HttpStatus.NOT_FOUND, "Document not found");
             }
         }
 

@@ -20,12 +20,16 @@ public record AdminUserResponse(
 ) {
 
     public static AdminUserResponse from(User user) {
+        return from(user, user.getAvatarUrl());
+    }
+
+    public static AdminUserResponse from(User user, String avatarUrl) {
         return new AdminUserResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getFullName(),
                 user.getPhone(),
-                user.getAvatarUrl(),
+                avatarUrl,
                 user.getRole(),
                 user.getStatus(),
                 user.getFailedLoginAttempts(),
