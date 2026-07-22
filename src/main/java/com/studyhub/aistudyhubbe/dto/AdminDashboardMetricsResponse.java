@@ -23,7 +23,6 @@ public record AdminDashboardMetricsResponse(
             long hiddenDocuments,
             long lockedDocuments,
             long removedDocuments,
-            long deletedDocuments,
             long moderatedDocuments
     ) {
     }

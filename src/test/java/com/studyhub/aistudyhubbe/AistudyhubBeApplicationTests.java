@@ -8,7 +8,7 @@ import com.studyhub.aistudyhubbe.repository.DocumentRepository;
 import com.studyhub.aistudyhubbe.service.DocumentTextExtractionService;
 
 @SpringBootTest
-@ActiveProfiles("mysql")
+@ActiveProfiles("test")
 class AistudyhubBeApplicationTests {
 
     @Autowired

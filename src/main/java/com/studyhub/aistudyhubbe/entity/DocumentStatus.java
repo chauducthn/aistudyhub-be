@@ -5,6 +5,5 @@ public enum DocumentStatus {
     PUBLIC,
     HIDDEN,
     LOCKED,
-    REMOVED,
-    DELETED
+    REMOVED
 }
