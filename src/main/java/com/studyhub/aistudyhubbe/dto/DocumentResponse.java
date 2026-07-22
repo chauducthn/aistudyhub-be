@@ -8,6 +8,7 @@ import java.time.Instant;
 public record DocumentResponse(
         Long id,
         Long userId,
+        String uploaderName,
         Long subjectId,
         String subjectName,
         String title,
@@ -31,6 +32,7 @@ public record DocumentResponse(
         return new DocumentResponse(
                 document.getId(),
                 document.getUser().getId(),
+                document.getUser().getFullName(),
                 document.getSubject() == null ? null : document.getSubject().getId(),
                 document.getSubject() == null ? null : document.getSubject().getName(),
                 document.getTitle(),
@@ -55,6 +57,7 @@ public record DocumentResponse(
         return new DocumentResponse(
                 document.getId(),
                 ownerUserId,
+                document.getUser().getFullName(),
                 document.getSubject() == null ? null : document.getSubject().getId(),
                 document.getSubject() == null ? null : document.getSubject().getName(),
                 document.getTitle(),

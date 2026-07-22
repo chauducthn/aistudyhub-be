@@ -7,6 +7,7 @@ import com.studyhub.aistudyhubbe.dto.PageResponse;
 import com.studyhub.aistudyhubbe.config.CacheNames;
 import com.studyhub.aistudyhubbe.entity.Document;
 import com.studyhub.aistudyhubbe.entity.DocumentStatus;
+import com.studyhub.aistudyhubbe.entity.Role;
 import com.studyhub.aistudyhubbe.entity.User;
 import com.studyhub.aistudyhubbe.entity.UserStatus;
 import com.studyhub.aistudyhubbe.exception.ApiException;
@@ -44,6 +45,7 @@ public class AdminService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final DocumentStorageService documentStorageService;
+    private final AvatarStorageService avatarStorageService;
 
     public AdminService(
             UserRepository userRepository,
@@ -56,7 +58,8 @@ public class AdminService {
             DocumentChunkRepository documentChunkRepository,
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordEncoder passwordEncoder,
-            DocumentStorageService documentStorageService) {
+            DocumentStorageService documentStorageService,
+            AvatarStorageService avatarStorageService) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.documentRepository = documentRepository;
@@ -68,22 +71,18 @@ public class AdminService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.documentStorageService = documentStorageService;
+        this.avatarStorageService = avatarStorageService;
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<AdminUserResponse> listUsers(String search, int page, int size) {
-        Page<User> users;
-        if (search == null || search.isBlank()) {
-            users = userRepository.findAll(adminPageable(page, size));
-        } else {
-            String keyword = search.trim();
-            users = userRepository.findByFullNameContainingIgnoreCaseOrEmailContainingIgnoreCase(
-                    keyword,
-                    keyword,
-                    adminPageable(page, size));
-        }
+    public PageResponse<AdminUserResponse> listUsers(String search, Role role, int page, int size) {
+        Page<User> users = userRepository.searchUsers(
+                search == null ? "" : search.trim(),
+                role,
+                adminPageable(page, size)
+        );
 
-        return PageResponse.from(users.map(AdminUserResponse::from));
+        return PageResponse.from(users.map(u -> AdminUserResponse.from(u, avatarStorageService.presignAvatarUrl(u.getAvatarUrl()))));
     }
 
     @Transactional(readOnly = true)
@@ -168,7 +167,8 @@ public class AdminService {
             refreshTokenRepository.revokeAllByUserId(user.getId());
         }
 
-        return AdminUserResponse.from(userRepository.save(user));
+        User savedUser = userRepository.save(user);
+        return AdminUserResponse.from(savedUser, avatarStorageService.presignAvatarUrl(savedUser.getAvatarUrl()));
     }
 
     @Transactional
@@ -178,7 +178,8 @@ public class AdminService {
         user.setFullName(request.fullName().trim());
         user.setPhone(request.phone() == null || request.phone().isBlank() ? null : request.phone().trim());
 
-        return AdminUserResponse.from(userRepository.save(user));
+        User savedUser = userRepository.save(user);
+        return AdminUserResponse.from(savedUser, avatarStorageService.presignAvatarUrl(savedUser.getAvatarUrl()));
     }
 
     @Transactional
@@ -195,7 +196,8 @@ public class AdminService {
         refreshTokenRepository.revokeAllByUserId(user.getId());
         passwordResetTokenRepository.invalidateAllByUserId(user.getId());
 
-        return AdminUserResponse.from(userRepository.save(user));
+        User savedUser = userRepository.save(user);
+        return AdminUserResponse.from(savedUser, avatarStorageService.presignAvatarUrl(savedUser.getAvatarUrl()));
     }
 
     @Transactional
